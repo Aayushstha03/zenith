@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
+from threading import Event
 
-from zenith.config import Settings
-from zenith.health import encode_report, health_report
-from zenith.models import prefetch, readiness
+from zenith.core.config import Settings
+from zenith.parser.service import VaultParser
+from zenith.parser.watcher import VaultWatcher
+from zenith.runtime.health import encode_report, health_report
+from zenith.runtime.models import prefetch, readiness
 
 
 def _print(data: object) -> None:
-    print(json.dumps(data, indent=2, sort_keys=True))
+    print(json.dumps(data, indent=2, sort_keys=True, default=str))
 
 
 def _handler(settings: Settings) -> type[BaseHTTPRequestHandler]:
@@ -41,6 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("serve", help="run the application health service")
     commands.add_parser("health", help="check Qdrant, models, vault, and configuration")
+    parse = commands.add_parser("parse", help="parse the configured vault without indexing")
+    parse.add_argument("paths", nargs="*", help="optional vault-relative Markdown paths")
+    commands.add_parser("watch", help="watch the vault and parse debounced Markdown changes")
     models = commands.add_parser("models", help="manage local embedding models")
     model_commands = models.add_subparsers(dest="model_command", required=True)
     model_commands.add_parser("prefetch", help="download and validate pinned models")
@@ -59,6 +66,22 @@ def main(argv: list[str] | None = None) -> int:
         report = health_report(settings)
         _print(report)
         return 0 if report["ready"] else 1
+    if args.command == "parse":
+        result = VaultParser(settings).parse_vault(args.paths or None)
+        _print({"notes": [asdict(note) for note in result]})
+        return 0
+    if args.command == "watch":
+        vault_parser = VaultParser(settings)
+
+        def changed(paths: tuple[str, ...]) -> None:
+            notes = vault_parser.parse_vault(list(paths))
+            _print({"changed": list(paths), "parsed": [note.path for note in notes]})
+
+        try:
+            with VaultWatcher(settings, changed):
+                Event().wait()
+        except KeyboardInterrupt:
+            return 0
     if args.model_command == "prefetch":
         _print(prefetch(settings))
         return 0

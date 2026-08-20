@@ -1,6 +1,6 @@
 import pytest
 
-from zenith.contracts import (
+from zenith.core.contracts import (
     EntryType,
     Link,
     LinkResolution,
@@ -38,7 +38,7 @@ def test_payload_serializes_enums_tuples_and_nested_contracts() -> None:
         entry_id="entry",
         path="projects/News Resolution.md",
         note_title="News Resolution",
-        note_type=NoteType.PROJECT,
+        note_type=NoteType.STANDARD,
         entry_type=EntryType.PROJECT_UPDATE,
         text="status loops",
         heading="2026-08-19",
@@ -55,6 +55,6 @@ def test_payload_serializes_enums_tuples_and_nested_contracts() -> None:
         modified_at="2026-08-20T00:00:00+00:00",
     ).to_dict()
 
-    assert payload["note_type"] == "project"
+    assert payload["note_type"] == "standard"
     assert payload["heading_path"] == ["News Resolution", "2026-08-19"]
     assert payload["outgoing_links"][0]["resolution"] == "resolved"

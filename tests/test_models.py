@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from zenith.config import Settings
-from zenith.models import prefetch, readiness
+from zenith.core.config import Settings
+from zenith.runtime.models import prefetch, readiness
 
 
 class DenseEncoder:

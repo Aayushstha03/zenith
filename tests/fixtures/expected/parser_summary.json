@@ -1,0 +1,32 @@
+{
+  "logs/2026-08-20.md": {
+    "note_type": "log",
+    "entry_types": ["daily_section", "daily_section", "daily_section"],
+    "dates": ["2026-08-20", "2026-08-20", "2026-08-20"],
+    "headings": ["Work", "Thoughts", "Meals"],
+    "tags": [[], ["journal"], ["recipe"]]
+  },
+  "projects/News Resolution.md": {
+    "note_type": "standard",
+    "entry_types": ["project_update", "project_update"],
+    "dates": ["2026-08-19", "2026-08-17"]
+  },
+  "messy/deep/random/Mixed Note.md": {
+    "note_type": "standard",
+    "entry_types": [
+      "freeform_section",
+      "freeform_section",
+      "project_update",
+      "project_update",
+      "freeform_section",
+      "project_update"
+    ],
+    "dates": [null, null, "2026-08-18", "2026-08-18", null, "2026-08-20"]
+  },
+  "kanban/Kitchen App.md": {
+    "note_type": "kanban",
+    "entry_types": ["kanban_card", "kanban_card", "kanban_card", "kanban_card", "kanban_card", "kanban_card"],
+    "columns": ["ToDo", "Doing", "complete"],
+    "checked": [false, false, false, false, false, true]
+  }
+}

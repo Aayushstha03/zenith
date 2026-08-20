@@ -8,11 +8,11 @@ VAULT = ROOT / "fixtures" / "vault"
 
 def test_fixture_manifest_and_markdown_shapes_exist() -> None:
     manifest = json.loads((ROOT / "fixtures" / "expected" / "manifest.json").read_text())
-    daily = (VAULT / "Daily" / "2026-08-20.md").read_text()
+    daily = (VAULT / "logs" / "2026-08-20.md").read_text()
     project = (VAULT / "projects" / "News Resolution.md").read_text()
     kanban = (VAULT / "kanban" / "Kitchen App.md").read_text()
 
-    assert manifest["daily/2026-08-20"]["sections"] == ["Work", "Thoughts", "Meals"]
+    assert manifest["logs/2026-08-20.md"]["sections"] == ["Work", "Thoughts", "Meals"]
     assert "## Thoughts\n#journal" in daily
     assert project.count("#### 2026-") == 2
     assert kanban.count("- [ ]") == 5

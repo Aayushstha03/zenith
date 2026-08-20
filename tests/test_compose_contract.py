@@ -30,6 +30,11 @@ def test_documented_env_contains_all_compose_settings() -> None:
         "ZENITH_COLLECTION",
         "ZENITH_DENSE_MODEL",
         "ZENITH_SPARSE_MODEL",
+        "ZENITH_LOG_ROOT",
+        "ZENITH_KANBAN_ROOT",
+        "ZENITH_EXCLUDED_DIRECTORIES",
+        "ZENITH_KNOWN_TAGS",
+        "ZENITH_TAG_ALIASES",
         "RESTART_POLICY",
     }
     for name in required:

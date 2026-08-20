@@ -1,17 +1,15 @@
-"""Storage-independent contracts frozen during Phase 1."""
+"""Storage-independent contracts shared by parsing and indexing."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 
 class NoteType(StrEnum):
-    DAILY = "daily"
-    PROJECT = "project"
-    FREEFORM = "freeform"
+    LOG = "log"
+    STANDARD = "standard"
     KANBAN = "kanban"
 
 
@@ -35,6 +33,7 @@ class WarningType(StrEnum):
     AMBIGUOUS_LINK = "ambiguous_link"
     MISSING_LINK = "missing_link"
     INVALID_KANBAN_SETTINGS = "invalid_kanban_settings"
+    MISSING_KANBAN_MARKER = "missing_kanban_marker"
     PARSER_FAILURE = "parser_failure"
 
 
@@ -85,6 +84,7 @@ class ParsedEntry:
     note_type: NoteType
     entry_type: EntryType
     text: str
+    embedding_text: str
     heading: str | None
     heading_path: tuple[str, ...]
     source: SourceRange
@@ -114,6 +114,7 @@ class ParsedNote:
     content_hash: str
     entries: tuple[ParsedEntry, ...]
     warnings: tuple[IndexWarning, ...] = ()
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +187,3 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _jsonable(item) for key, item in value.items()}
     return value
-
-
-def utc_now() -> str:
-    return datetime.now(UTC).isoformat()

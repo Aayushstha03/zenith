@@ -70,7 +70,8 @@ The application is responsible for:
 
 - Discovering Markdown files.
 - Parsing Markdown with a CommonMark-compatible AST.
-- Recognizing daily notes, project notes, freeform notes, and Kanban boards.
+- Recognizing log notes, standard open notes, and Kanban boards. Only the
+  configured `/logs` and `/kanban` roots carry path semantics.
 - Extracting sections, dated entries, Kanban cards, tags, links, and source lines.
 - Resolving internal links.
 - Validating the fixed tag pool.
@@ -152,7 +153,7 @@ Example:
     "entry_id": "stable-entry-uuid",
     "path": "projects/News Resolution.md",
     "note_title": "News Resolution",
-    "note_type": "project",
+    "note_type": "standard",
     "entry_type": "project_update",
 
     "text": "Tracing the pipeline and investigating clustering...",
@@ -205,7 +206,7 @@ Create payload indexes for frequently filtered fields:
 | `note_id` | keyword | Within-note search |
 | `path` | keyword | Exact path lookup |
 | `note_title` | keyword | Note resolution |
-| `note_type` | keyword | Daily/project/freeform/Kanban filtering |
+| `note_type` | keyword | Log/standard/Kanban filtering |
 | `entry_type` | keyword | Search-unit filtering |
 | `note_date` | datetime | Daily-note lookup and ranges |
 | `entry_date` | datetime | Project-update lookup and ranges |
@@ -234,21 +235,30 @@ Use a Markdown AST to distinguish:
 
 Tags are extracted only from eligible prose nodes and validated against the configured fixed tag pool.
 
-### Daily notes
+### Log notes
 
-Resolve the note date from the configured filename/path convention, falling back to the first non-empty line when allowed.
+Files whose first vault-relative path segment is the configured `/logs` root use
+log semantics. Resolve the note date from the configured filename convention,
+falling back to the first non-empty line when allowed.
 
 Each meaningful section becomes a `daily_section` point. Inline tags and links attach to the smallest containing section.
 
-### Project notes
+### Standard open notes
 
-A heading consisting solely of a recognized date establishes `entry_date` for the associated content. Each dated block becomes a `project_update` point.
+Every Markdown file outside `/logs` and `/kanban` is a standard note, regardless
+of its directory, nesting, filename, or layout. A standard note may mix dated
+project updates, ordinary sections, and loose chunks.
+
+A heading consisting solely of a recognized date establishes `entry_date` for
+the structurally governed content. Each dated block becomes a `project_update`
+point.
 
 Undated material remains searchable as `freeform_section` content and must not inherit dates through proximity or links.
 
-### Freeform notes
-
-Split by useful heading boundaries. If headings are absent or a section is oversized, create paragraph-aware chunks with a small configurable overlap.
+Ordinary headings create `freeform_section` entries. Loose content before or
+between useful headings, and notes without headings, create paragraph-aware
+`freeform_chunk` entries. Directory names such as `projects`, `work`, or
+`archive` have no classification meaning.
 
 ### Kanban boards
 

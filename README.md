@@ -15,6 +15,14 @@ docker compose up -d
 docker compose ps
 ```
 
+Parse the mounted vault once or watch it recursively with debounced Watchdog
+events:
+
+```bash
+docker compose exec zenith zenith parse
+docker compose exec zenith zenith watch
+```
+
 After model prefetch, the application health endpoint is available inside the
 Compose network and the Qdrant dashboard is available at
 <http://localhost:6333/dashboard>.

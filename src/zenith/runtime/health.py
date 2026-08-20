@@ -7,8 +7,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
-from zenith.config import Settings
-from zenith.models import readiness
+from zenith.core.config import Settings
+from zenith.runtime.models import readiness
 
 
 def qdrant_health(settings: Settings, timeout: float = 2.0) -> dict[str, Any]:

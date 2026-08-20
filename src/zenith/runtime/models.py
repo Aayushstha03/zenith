@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from zenith.config import Settings
+from zenith.core.config import Settings
 
 
 MARKER = "ready.json"

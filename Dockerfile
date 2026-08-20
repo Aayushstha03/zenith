@@ -5,8 +5,14 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /build
 COPY pyproject.toml README.md ./
+RUN python -m pip install --prefix=/install \
+    fastembed==0.7.3 \
+    markdown-it-py==4.0.0 \
+    pyyaml==6.0.3 \
+    qdrant-client==1.15.1 \
+    watchdog==6.0.0
 COPY src ./src
-RUN python -m pip install --prefix=/install .
+RUN python -m pip install --prefix=/install --no-deps .
 
 FROM python:3.13.7-slim-bookworm AS runtime
 

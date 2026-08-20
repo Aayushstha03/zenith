@@ -1,13 +1,18 @@
 {
-  "daily/2026-08-20": {
-    "note_type": "daily",
+  "logs/2026-08-20.md": {
+    "note_type": "log",
     "note_date": "2026-08-20",
     "sections": ["Work", "Thoughts", "Meals"],
     "section_tags": {"Work": [], "Thoughts": ["journal"], "Meals": ["recipe"]}
   },
   "projects/News Resolution.md": {
-    "note_type": "project",
+    "note_type": "standard",
     "updates": ["2026-08-19", "2026-08-17"]
+  },
+  "messy/deep/random/Mixed Note.md": {
+    "note_type": "standard",
+    "entry_types": ["freeform_section", "project_update"],
+    "dates": ["2026-08-18", "2026-08-20"]
   },
   "kanban/Kitchen App.md": {
     "note_type": "kanban",

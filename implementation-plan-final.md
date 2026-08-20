@@ -29,6 +29,10 @@ tests and validation gate pass. Each phase leaves tested code, reproducible
 Compose commands, versioned fixtures, actionable diagnostics, and a record of
 material decisions or deviations.
 
+Note kinds are `log`, `standard`, and `kanban`. Only the configured first-level
+`/logs` and `/kanban` roots carry path semantics. All other notes are standard,
+may live anywhere, and may mix dated and undated entries.
+
 Search units are `daily_section`, `project_update`, `freeform_section`,
 `freeform_chunk`, and `kanban_card`. Each becomes one Qdrant point. Whole-note
 identity and evidence metadata are carried in every point payload.
@@ -52,7 +56,7 @@ identity and evidence metadata are carried in every point payload.
 
 - Daily dates from paths and first content lines.
 - Ascending and descending project date headings.
-- Freeform notes with headings, without headings, and oversized sections.
+- Standard notes with headings, without headings, mixed dated content, and oversized sections.
 - Known, aliased, unknown, and mixed-case tags.
 - Hashes in headings, URLs, inline code, fenced code, and prose.
 - Resolved, missing, ambiguous, anchored, and aliased internal links.
@@ -76,14 +80,20 @@ identity and evidence metadata are carried in every point payload.
 
 ### Build
 
-1. Discover Markdown under configured roots and exclusions.
+1. Discover Markdown recursively under configured roots and exclusions.
 2. Parse frontmatter and Markdown with a CommonMark-compatible AST.
-3. Classify daily, project, freeform, and Kanban notes.
+3. Classify only `/logs` as log and `/kanban` as Kanban; classify every other
+   Markdown file as a standard open note.
 4. Build heading paths and source-line boundaries.
 5. Extract entries, dates, tags, internal links, web links, and warnings.
 6. Apply the specialized Kanban pass after generic AST parsing.
 7. Construct separate raw search text and contextual embedding input.
 8. Emit deterministic, storage-independent parse results.
+9. Allow standard notes to mix `project_update`, `freeform_section`, and
+   `freeform_chunk` entries without inferring meaning from their directories.
+10. Use Watchdog to observe recursive Markdown changes and emit debounced,
+    normalized vault-relative path batches. Incremental storage updates remain
+    Phase 4 work.
 
 ### Validation gate
 
@@ -91,6 +101,8 @@ identity and evidence metadata are carried in every point payload.
 - Repeated parses produce identical structures and identifiers.
 - Tags do not leak or arise from headings, URLs, or code.
 - Mentioned dates do not establish chronology; links never transfer dates.
+- Root, deeply nested, and messily organized standard notes parse identically
+  when their Markdown content is identical.
 - Kanban ordering, checkbox state, status, decorations, and settings are exact.
 - Every entry has a valid vault-relative path and line range.
 

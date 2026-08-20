@@ -6,11 +6,14 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastembed==0.7.3",
+    "markdown-it-py==4.0.0",
+    "pyyaml==6.0.3",
     "qdrant-client==1.15.1",
+    "watchdog==6.0.0",
 ]
 
 [project.scripts]
-zenith = "zenith.cli:main"
+zenith = "zenith.runtime.cli:main"
 
 [dependency-groups]
 dev = [

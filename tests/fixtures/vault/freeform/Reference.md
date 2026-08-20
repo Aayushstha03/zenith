@@ -4,6 +4,8 @@
 
 Known prose tag: #journal
 
+Known alias: #journaling
+
 Unknown prose tag: #unregistered
 
 URL hash: https://example.test/page#fragment
