@@ -14,7 +14,10 @@ import yaml
 from zenith.core.contracts import IndexWarning, Link, SourceRange, WarningType
 
 
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Vault dates have one deliberately non-configurable representation. Using
+# ASCII digit classes and fullmatch prevents timestamps, prefixes, suffixes,
+# slashes, and Unicode digit lookalikes from being interpreted as chronology.
+DATE_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 TAG_RE = re.compile(r"(?<![\w/#])#([A-Za-z][\w-]*)")
 WIKI_RE = re.compile(r"\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]")
 URL_RE = re.compile(r"https?://[^\s<>]+")
@@ -70,14 +73,14 @@ def markdown_tokens(content: str) -> list[Token]:
 
 
 def valid_iso_date(value: str) -> str | None:
-    candidate = value.strip()
-    if not DATE_RE.fullmatch(candidate):
+    """Return a real calendar date only when value is exactly YYYY-MM-DD."""
+    if not DATE_RE.fullmatch(value):
         return None
     try:
-        date.fromisoformat(candidate)
+        date.fromisoformat(value)
     except ValueError:
         return None
-    return candidate
+    return value
 
 
 def headings(tokens: list[Token], total_lines: int) -> tuple[Heading, ...]:

@@ -238,8 +238,9 @@ Tags are extracted only from eligible prose nodes and validated against the conf
 ### Log notes
 
 Files whose first vault-relative path segment is the configured `/logs` root use
-log semantics. Resolve the note date from the configured filename convention,
-falling back to the first non-empty line when allowed.
+log semantics. A date is recognized only when the complete value is a valid
+calendar date in the exact ASCII `YYYY-MM-DD` form. Resolve the note date from
+that filename convention, falling back to the first non-empty line when allowed.
 
 Each meaningful section becomes a `daily_section` point. Inline tags and links attach to the smallest containing section.
 
@@ -249,9 +250,9 @@ Every Markdown file outside `/logs` and `/kanban` is a standard note, regardless
 of its directory, nesting, filename, or layout. A standard note may mix dated
 project updates, ordinary sections, and loose chunks.
 
-A heading consisting solely of a recognized date establishes `entry_date` for
-the structurally governed content. Each dated block becomes a `project_update`
-point.
+A heading consisting solely of a valid `YYYY-MM-DD` date establishes
+`entry_date` for the structurally governed content. Each dated block becomes a
+`project_update` point. No other date representation establishes chronology.
 
 Undated material remains searchable as `freeform_section` content and must not inherit dates through proximity or links.
 

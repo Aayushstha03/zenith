@@ -17,6 +17,8 @@ rebuildable. The indexer never rewrites the vault.
 - Dense and sparse candidates are fused in Qdrant with RRF.
 - Strict literal requests are verified against original payload text and, when
   authoritative verification is needed, the cited Markdown lines.
+- Dates establish chronology only when they are valid calendar dates represented
+  by the complete ASCII value `YYYY-MM-DD`; no alternative format is accepted.
 - A pinned model-prefetch command populates a persistent model cache so normal
   operation can run offline.
 - SQLite, FTS5, cloud inference, hosted embedding APIs, and a separate graph

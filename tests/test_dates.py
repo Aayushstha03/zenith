@@ -1,0 +1,33 @@
+import pytest
+
+from zenith.parser.markdown import headings, markdown_tokens, valid_iso_date
+
+
+@pytest.mark.parametrize("value", ["2026-08-20", "2000-02-29", "0001-01-01"])
+def test_exact_yyyy_mm_dd_dates_are_valid(value: str) -> None:
+    assert valid_iso_date(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-8-20",
+        "26-08-20",
+        "2026/08/20",
+        "2026-08-20T00:00:00Z",
+        "2026-08-20 update",
+        "date: 2026-08-20",
+        " 2026-08-20",
+        "2026-08-20 ",
+        "2026-02-29",
+        "２０２６-０８-２０",
+    ],
+)
+def test_every_other_date_representation_is_invalid(value: str) -> None:
+    assert valid_iso_date(value) is None
+
+
+def test_only_exact_date_heading_establishes_chronology() -> None:
+    content = "## 2026-08-20\nExact.\n## 2026-08-21 update\nNot dated.\n"
+    parsed = headings(markdown_tokens(content), len(content.splitlines()))
+    assert [heading.active_date for heading in parsed] == ["2026-08-20", None]

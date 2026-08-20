@@ -23,6 +23,17 @@ docker compose exec zenith zenith parse
 docker compose exec zenith zenith watch
 ```
 
+Build the complete derived index through a temporary collection, atomically
+activate it through the configured alias, and inspect its schema:
+
+```bash
+docker compose exec zenith zenith index rebuild
+docker compose exec zenith zenith index inspect
+```
+
+A failed rebuild leaves the active alias unchanged and removes its incomplete
+temporary collection.
+
 After model prefetch, the application health endpoint is available inside the
 Compose network and the Qdrant dashboard is available at
 <http://localhost:6333/dashboard>.

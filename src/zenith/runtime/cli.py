@@ -12,6 +12,8 @@ from threading import Event
 from zenith.core.config import Settings
 from zenith.parser.service import VaultParser
 from zenith.parser.watcher import VaultWatcher
+from zenith.index.diagnostics import inspect_collection
+from zenith.index.rebuild import IndexRebuilder
 from zenith.runtime.health import encode_report, health_report
 from zenith.runtime.models import prefetch, readiness
 
@@ -48,6 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     parse = commands.add_parser("parse", help="parse the configured vault without indexing")
     parse.add_argument("paths", nargs="*", help="optional vault-relative Markdown paths")
     commands.add_parser("watch", help="watch the vault and parse debounced Markdown changes")
+    index = commands.add_parser("index", help="manage the Qdrant index")
+    index_commands = index.add_subparsers(dest="index_command", required=True)
+    index_commands.add_parser("rebuild", help="atomically rebuild the complete vault index")
+    index_commands.add_parser("inspect", help="inspect active collection integrity")
     models = commands.add_parser("models", help="manage local embedding models")
     model_commands = models.add_subparsers(dest="model_command", required=True)
     model_commands.add_parser("prefetch", help="download and validate pinned models")
@@ -82,6 +88,13 @@ def main(argv: list[str] | None = None) -> int:
                 Event().wait()
         except KeyboardInterrupt:
             return 0
+    if args.command == "index":
+        if args.index_command == "rebuild":
+            _print(IndexRebuilder(settings).rebuild().to_dict())
+            return 0
+        report = inspect_collection(settings)
+        _print(report)
+        return 0 if report["ready"] else 1
     if args.model_command == "prefetch":
         _print(prefetch(settings))
         return 0
