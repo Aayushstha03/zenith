@@ -1,0 +1,10 @@
+.git
+.venv
+.data
+.models
+.pytest_cache
+__pycache__
+*.pyc
+tests
+architecture-final.md
+implementation-plan-final.md

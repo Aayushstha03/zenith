@@ -1,0 +1,73 @@
+name: zenith
+
+services:
+  qdrant:
+    image: ${QDRANT_IMAGE}
+    restart: ${RESTART_POLICY}
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    ports:
+      - "${QDRANT_BIND_ADDRESS}:${QDRANT_PORT}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ': >/dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - zenith-internal
+      - dashboard
+
+  zenith:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: ${RESTART_POLICY}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    environment:
+      ZENITH_QDRANT_URL: http://qdrant:6333
+      ZENITH_VAULT_PATH: /vault
+      ZENITH_MODEL_CACHE_PATH: /models
+      ZENITH_COLLECTION: ${ZENITH_COLLECTION}
+      ZENITH_DENSE_MODEL: ${ZENITH_DENSE_MODEL}
+      ZENITH_SPARSE_MODEL: ${ZENITH_SPARSE_MODEL}
+    volumes:
+      - type: bind
+        source: ${ZENITH_VAULT_PATH}
+        target: /vault
+        read_only: true
+      - model-cache:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks:
+      - zenith-internal
+
+  model-prefetch:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ZENITH_MODEL_CACHE_PATH: /models
+      ZENITH_DENSE_MODEL: ${ZENITH_DENSE_MODEL}
+      ZENITH_SPARSE_MODEL: ${ZENITH_SPARSE_MODEL}
+    volumes:
+      - model-cache:/models
+    command: ["zenith", "models", "prefetch"]
+
+networks:
+  zenith-internal:
+    internal: true
+  dashboard:
+
+volumes:
+  qdrant-data:
+  model-cache:

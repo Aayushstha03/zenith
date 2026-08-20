@@ -1,0 +1,25 @@
+{
+  "daily/2026-08-20": {
+    "note_type": "daily",
+    "note_date": "2026-08-20",
+    "sections": ["Work", "Thoughts", "Meals"],
+    "section_tags": {"Work": [], "Thoughts": ["journal"], "Meals": ["recipe"]}
+  },
+  "projects/News Resolution.md": {
+    "note_type": "project",
+    "updates": ["2026-08-19", "2026-08-17"]
+  },
+  "kanban/Kitchen App.md": {
+    "note_type": "kanban",
+    "columns": ["ToDo", "Doing", "complete"],
+    "card_counts": [4, 1, 1],
+    "checked_counts": [0, 0, 1],
+    "settings_searchable": false
+  },
+  "required_warnings": [
+    "unknown_tag",
+    "missing_link",
+    "ambiguous_link",
+    "invalid_kanban_settings"
+  ]
+}

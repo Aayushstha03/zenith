@@ -1,0 +1,192 @@
+"""Storage-independent contracts frozen during Phase 1."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
+
+
+class NoteType(StrEnum):
+    DAILY = "daily"
+    PROJECT = "project"
+    FREEFORM = "freeform"
+    KANBAN = "kanban"
+
+
+class EntryType(StrEnum):
+    DAILY_SECTION = "daily_section"
+    PROJECT_UPDATE = "project_update"
+    FREEFORM_SECTION = "freeform_section"
+    FREEFORM_CHUNK = "freeform_chunk"
+    KANBAN_CARD = "kanban_card"
+
+
+class LinkResolution(StrEnum):
+    RESOLVED = "resolved"
+    AMBIGUOUS = "ambiguous"
+    MISSING = "missing"
+
+
+class WarningType(StrEnum):
+    INVALID_DATE = "invalid_date"
+    UNKNOWN_TAG = "unknown_tag"
+    AMBIGUOUS_LINK = "ambiguous_link"
+    MISSING_LINK = "missing_link"
+    INVALID_KANBAN_SETTINGS = "invalid_kanban_settings"
+    PARSER_FAILURE = "parser_failure"
+
+
+class RetrievalMode(StrEnum):
+    METADATA = "metadata"
+    LITERAL = "literal"
+    LEXICAL = "lexical"
+    SEMANTIC = "semantic"
+    HYBRID = "hybrid"
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRange:
+    start_line: int
+    end_line: int
+
+    def __post_init__(self) -> None:
+        if self.start_line < 1 or self.end_line < self.start_line:
+            raise ValueError("source range must use positive inclusive lines")
+
+
+@dataclass(frozen=True, slots=True)
+class Link:
+    target_text: str
+    target_note_id: str | None = None
+    target_heading: str | None = None
+    alias: str | None = None
+    resolution: LinkResolution = LinkResolution.MISSING
+    line: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class KanbanData:
+    name: str
+    column: str
+    status: str | None
+    column_position: int
+    card_position: int
+    checked: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedEntry:
+    entry_id: str
+    note_id: str
+    path: str
+    note_title: str
+    note_type: NoteType
+    entry_type: EntryType
+    text: str
+    heading: str | None
+    heading_path: tuple[str, ...]
+    source: SourceRange
+    note_date: str | None = None
+    entry_date: str | None = None
+    tags: tuple[str, ...] = ()
+    outgoing_links: tuple[Link, ...] = ()
+    web_links: tuple[str, ...] = ()
+    content_hash: str = ""
+    kanban: KanbanData | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IndexWarning:
+    kind: WarningType
+    path: str
+    message: str
+    line: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedNote:
+    note_id: str
+    path: str
+    title: str
+    note_type: NoteType
+    content_hash: str
+    entries: tuple[ParsedEntry, ...]
+    warnings: tuple[IndexWarning, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class QueryPlan:
+    mode: RetrievalMode = RetrievalMode.HYBRID
+    date_from: str | None = None
+    date_to: str | None = None
+    tags_all: tuple[str, ...] = ()
+    tags_any: tuple[str, ...] = ()
+    note_id: str | None = None
+    section: str | None = None
+    entry_types: tuple[EntryType, ...] = ()
+    literal_text: str | None = None
+    lexical_text: str | None = None
+    semantic_text: str | None = None
+    follow_links: bool = False
+    link_depth: int = 1
+    nearby_days: int = 3
+    max_linked_notes: int = 5
+    limit: int = 10
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.link_depth <= 2:
+            raise ValueError("link_depth must be between 0 and 2")
+        if not 1 <= self.max_linked_notes <= 5:
+            raise ValueError("max_linked_notes must be between 1 and 5")
+        if self.limit <= 0:
+            raise ValueError("limit must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class QdrantPayload:
+    schema_version: int
+    parser_version: str
+    embedding_model: str
+    sparse_model: str
+    vault_id: str
+    note_id: str
+    entry_id: str
+    path: str
+    note_title: str
+    note_type: NoteType
+    entry_type: EntryType
+    text: str
+    heading: str | None
+    heading_path: tuple[str, ...]
+    start_line: int
+    end_line: int
+    note_date: str | None
+    entry_date: str | None
+    tags: tuple[str, ...]
+    outgoing_note_ids: tuple[str, ...]
+    outgoing_links: tuple[Link, ...]
+    web_links: tuple[str, ...]
+    content_hash: str
+    modified_at: str
+    board: KanbanData | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, StrEnum):
+        return value.value
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    return value
+
+
+def utc_now() -> str:
+    return datetime.now(UTC).isoformat()
