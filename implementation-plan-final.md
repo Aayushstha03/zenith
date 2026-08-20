@@ -171,9 +171,14 @@ identity and evidence metadata are carried in every point payload.
 - A labeled query set compares dense, BM25, and hybrid quality before RRF
   parameters are frozen.
 
-## 8. Phase 6 — Graph-Aware Context Expansion
+## 8. Phase 6 — Graph-Aware Context Expansion and Network Graph Export
 
-### Build
+This phase has two build items with different shapes. Bounded context
+expansion feeds agent answers and stays small on purpose. Graph export feeds
+a future visualization layer and returns the fuller neighborhood instead.
+Both build on the same link-resolution primitive from `zenith.index.links`.
+
+### Build: bounded context expansion
 
 1. Retrieve outgoing links and backlinks from payloads.
 2. Search within resolved targets instead of loading notes wholesale.
@@ -183,12 +188,41 @@ identity and evidence metadata are carried in every point payload.
 5. Label direct evidence, followed links, backlinks, nearby history, and
    inference inputs.
 
+### Build: network graph export
+
+1. Compute the full interconnection graph across the vault: one node per
+   note, independent of any query.
+2. Add an edge for every resolved internal link, in link direction. A
+   backlink is the same edge read in reverse; it is not stored twice.
+3. Add a shared-tag edge between two notes when they share at least one tag.
+4. Add a shared-date edge between two entries when they carry the same
+   `note_date` or the same `entry_date`. Do not use a nearby-date window;
+   that fuzziness stays in bounded context expansion, not graph export.
+5. Do not apply the depth, note-count, or nearby-day budgets from bounded
+   context expansion. Export is unbounded by default; callers filter or
+   paginate on their side.
+6. Carry enough evidence per edge (source, target, edge type, and for
+   shared-tag/shared-date edges, which tag or date) for a renderer to label
+   it without a second lookup.
+7. Keep export deterministic and reproducible: the same vault state always
+   produces the same nodes and edges.
+
+A UI or rendering layer that consumes this export is out of scope for this
+phase and not yet scheduled. This phase only guarantees the data is
+queryable and stable enough to build one on later.
+
 ### Validation gate
 
 - Daily-to-project traversal works.
-- Cycles terminate and budgets cannot be exceeded.
+- Cycles terminate and budgets cannot be exceeded in bounded context
+  expansion.
 - Linked or nearby material is never presented as directly dated evidence.
 - Missing or ambiguous links stop deterministic traversal with diagnostics.
+- Graph export includes every resolved link, every shared-tag edge, and
+  every exact shared-date edge, with no depth or count budget applied.
+- A note with no links, tags, or dated entries still appears as an isolated
+  node, not silently dropped.
+- Two exports of the same unchanged vault state are identical.
 
 ## 9. Phase 7 — Library, CLI, and Diagnostics
 
@@ -284,3 +318,5 @@ One Docker Compose project can:
 8. Follow bounded context links without corrupting chronology.
 9. Return evidence with path, heading path, date semantics, and line range.
 10. Recover through persistence, snapshots, or a deterministic rebuild.
+11. Export a full interconnection graph — links, backlinks, shared tags, and
+    shared dates — deterministic and ready for a future visualization layer.
