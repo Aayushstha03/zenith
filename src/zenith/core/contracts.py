@@ -135,6 +135,10 @@ class QueryPlan:
     nearby_days: int = 3
     max_linked_notes: int = 5
     limit: int = 10
+    kanban_board: str | None = None
+    kanban_column: str | None = None
+    kanban_status: str | None = None
+    kanban_checked: bool | None = None
 
     def __post_init__(self) -> None:
         if not 0 <= self.link_depth <= 2:
@@ -176,6 +180,33 @@ class QdrantPayload:
     tokenizer_version: str = "fastembed-bm25-english-v1"
     embedding_input_version: str = "1"
     embedding_input_hash: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    entry_id: str
+    note_id: str
+    path: str
+    note_title: str
+    note_type: NoteType
+    entry_type: EntryType
+    mode: RetrievalMode
+    text: str
+    excerpt: str
+    heading: str | None
+    heading_path: tuple[str, ...]
+    start_line: int
+    end_line: int
+    note_date: str | None
+    entry_date: str | None
+    tags: tuple[str, ...]
+    outgoing_links: tuple[Link, ...]
+    score: float | None = None
+    verified: bool | None = None
+    kanban: KanbanData | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))

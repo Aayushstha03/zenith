@@ -41,28 +41,40 @@ class LocalEncoders:
         self.sparse = sparse
 
     def encode(self, texts: Sequence[str]) -> list[dict[str, object]]:
-        dense_vectors = list(self.dense.embed(list(texts)))
-        sparse_vectors = list(self.sparse.embed(list(texts)))
-        if len(dense_vectors) != len(texts) or len(sparse_vectors) != len(texts):
-            raise RuntimeError("encoders returned a different number of vectors than inputs")
+        dense_vectors = self.encode_dense(texts)
+        sparse_vectors = self.encode_sparse(texts)
+        return [
+            {"semantic": dense, "text-bm25": sparse}
+            for dense, sparse in zip(dense_vectors, sparse_vectors, strict=True)
+        ]
 
-        result: list[dict[str, object]] = []
-        for dense, sparse in zip(dense_vectors, sparse_vectors, strict=True):
+    def encode_dense(self, texts: Sequence[str]) -> list[list[float]]:
+        dense_vectors = list(self.dense.embed(list(texts)))
+        if len(dense_vectors) != len(texts):
+            raise RuntimeError("dense encoder returned a different number of vectors than inputs")
+
+        result: list[list[float]] = []
+        for dense in dense_vectors:
             dense_values = _float_list(dense)
             if len(dense_values) != DENSE_DIMENSIONS:
                 raise RuntimeError(
                     f"dense model returned {len(dense_values)} dimensions; expected {DENSE_DIMENSIONS}"
                 )
+            result.append(dense_values)
+        return result
+
+    def encode_sparse(self, texts: Sequence[str]) -> list[models.SparseVector]:
+        sparse_vectors = list(self.sparse.embed(list(texts)))
+        if len(sparse_vectors) != len(texts):
+            raise RuntimeError("sparse encoder returned a different number of vectors than inputs")
+
+        result: list[models.SparseVector] = []
+        for sparse in sparse_vectors:
             indices = _int_list(sparse.indices)
             values = _float_list(sparse.values)
             if not indices or len(indices) != len(values):
                 raise RuntimeError("sparse model returned an invalid or empty vector")
-            result.append(
-                {
-                    "semantic": dense_values,
-                    "text-bm25": models.SparseVector(indices=indices, values=values),
-                }
-            )
+            result.append(models.SparseVector(indices=indices, values=values))
         return result
 
 

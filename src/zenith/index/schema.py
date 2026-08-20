@@ -5,7 +5,7 @@ from __future__ import annotations
 from qdrant_client import models
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DENSE_VECTOR = "semantic"
 SPARSE_VECTOR = "text-bm25"
 
@@ -16,6 +16,8 @@ PAYLOAD_INDEXES: tuple[tuple[str, models.PayloadSchemaType], ...] = (
     ("note_title", models.PayloadSchemaType.KEYWORD),
     ("note_type", models.PayloadSchemaType.KEYWORD),
     ("entry_type", models.PayloadSchemaType.KEYWORD),
+    ("heading", models.PayloadSchemaType.KEYWORD),
+    ("heading_path", models.PayloadSchemaType.KEYWORD),
     ("note_date", models.PayloadSchemaType.DATETIME),
     ("entry_date", models.PayloadSchemaType.DATETIME),
     ("tags", models.PayloadSchemaType.KEYWORD),
