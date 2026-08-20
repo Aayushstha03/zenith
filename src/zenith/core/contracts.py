@@ -175,6 +175,7 @@ class QdrantPayload:
     encoder_version: str = "1"
     tokenizer_version: str = "fastembed-bm25-english-v1"
     embedding_input_version: str = "1"
+    embedding_input_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))

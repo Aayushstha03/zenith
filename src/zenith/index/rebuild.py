@@ -14,6 +14,7 @@ from qdrant_client import QdrantClient, models
 from zenith.core.config import Settings
 from zenith.core.contracts import ParsedEntry, ParsedNote, QdrantPayload
 from zenith.index.encoders import LocalEncoders
+from zenith.index.links import resolve_links
 from zenith.index.schema import SCHEMA_VERSION, create_collection
 from zenith.parser.service import PARSER_VERSION, VaultParser
 
@@ -51,7 +52,7 @@ class IndexRebuilder:
         self.encoders = encoders or LocalEncoders(settings)
 
     def rebuild(self) -> RebuildReport:
-        notes = VaultParser(self.settings, self.vault_id).parse_vault()
+        notes = resolve_links(VaultParser(self.settings, self.vault_id).parse_vault())
         entries = [entry for note in notes for entry in note.entries]
         temporary = f"{self.settings.collection_name}__build_{uuid4().hex}"
         previous = self._alias_target()
@@ -128,6 +129,7 @@ class IndexRebuilder:
             encoder_version=ENCODER_VERSION,
             tokenizer_version=TOKENIZER_VERSION,
             embedding_input_version=EMBEDDING_INPUT_VERSION,
+            embedding_input_hash=hashlib.sha256(entry.embedding_text.encode("utf-8")).hexdigest(),
         ).to_dict()
 
     def _alias_target(self) -> str | None:

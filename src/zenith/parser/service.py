@@ -32,7 +32,7 @@ from zenith.parser.markdown import (
 )
 
 
-PARSER_VERSION = "2.0.0"
+PARSER_VERSION = "2.1.0"
 
 
 class VaultParser:
@@ -62,9 +62,9 @@ class VaultParser:
         if frontmatter.warning:
             warnings.append(IndexWarning(WarningType.PARSER_FAILURE, relative, frontmatter.warning, 1))
 
-        metadata = None
+        metadata = dict(frontmatter.values)
         if note_type is NoteType.KANBAN:
-            entries, kanban_warnings, metadata = parse_kanban_entries(
+            entries, kanban_warnings, kanban_metadata = parse_kanban_entries(
                 lines=lines,
                 tokens=tokens,
                 parsed_headings=parsed_headings,
@@ -74,6 +74,7 @@ class VaultParser:
                 note_uuid=note_uuid,
                 settings=self.settings,
             )
+            metadata.update(kanban_metadata)
             warnings.extend(kanban_warnings)
         else:
             note_date = self._log_date(resolved.stem, lines, frontmatter.body_start) if note_type is NoteType.LOG else None

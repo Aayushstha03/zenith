@@ -5,7 +5,7 @@ from __future__ import annotations
 from qdrant_client import models
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DENSE_VECTOR = "semantic"
 SPARSE_VECTOR = "text-bm25"
 

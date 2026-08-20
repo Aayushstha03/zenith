@@ -66,8 +66,8 @@ def test_rebuild_validates_points_then_atomically_switches_alias() -> None:
     assert report.previous_collection == "entries__old"
     assert len(client.alias_operations) == 2
     payload = client.points[0].payload
-    assert payload["schema_version"] == 1
-    assert payload["parser_version"] == "2.0.0"
+    assert payload["schema_version"] == 2
+    assert payload["parser_version"] == "2.1.0"
     assert payload["embedding_input_version"] == "1"
     assert payload["start_line"] >= 1
 

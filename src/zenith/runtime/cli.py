@@ -13,6 +13,7 @@ from zenith.core.config import Settings
 from zenith.parser.service import VaultParser
 from zenith.parser.watcher import VaultWatcher
 from zenith.index.diagnostics import inspect_collection
+from zenith.index.incremental import IncrementalIndexer
 from zenith.index.rebuild import IndexRebuilder
 from zenith.runtime.health import encode_report, health_report
 from zenith.runtime.models import prefetch, readiness
@@ -53,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     index = commands.add_parser("index", help="manage the Qdrant index")
     index_commands = index.add_subparsers(dest="index_command", required=True)
     index_commands.add_parser("rebuild", help="atomically rebuild the complete vault index")
+    update = index_commands.add_parser("update", help="incrementally converge the active index")
+    update.add_argument("paths", nargs="*", help="optional changed vault-relative paths")
     index_commands.add_parser("inspect", help="inspect active collection integrity")
     models = commands.add_parser("models", help="manage local embedding models")
     model_commands = models.add_subparsers(dest="model_command", required=True)
@@ -77,11 +80,10 @@ def main(argv: list[str] | None = None) -> int:
         _print({"notes": [asdict(note) for note in result]})
         return 0
     if args.command == "watch":
-        vault_parser = VaultParser(settings)
+        indexer = IncrementalIndexer(settings)
 
         def changed(paths: tuple[str, ...]) -> None:
-            notes = vault_parser.parse_vault(list(paths))
-            _print({"changed": list(paths), "parsed": [note.path for note in notes]})
+            _print(indexer.reindex(list(paths)).to_dict())
 
         try:
             with VaultWatcher(settings, changed):
@@ -91,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "index":
         if args.index_command == "rebuild":
             _print(IndexRebuilder(settings).rebuild().to_dict())
+            return 0
+        if args.index_command == "update":
+            _print(IncrementalIndexer(settings).reindex(args.paths or None).to_dict())
             return 0
         report = inspect_collection(settings)
         _print(report)

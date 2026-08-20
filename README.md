@@ -28,6 +28,7 @@ activate it through the configured alias, and inspect its schema:
 
 ```bash
 docker compose exec zenith zenith index rebuild
+docker compose exec zenith zenith index update
 docker compose exec zenith zenith index inspect
 ```
 
