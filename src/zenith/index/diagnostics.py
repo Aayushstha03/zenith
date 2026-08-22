@@ -7,7 +7,7 @@ from typing import Any
 from qdrant_client import QdrantClient
 
 from zenith.core.config import Settings
-from zenith.index.schema import DENSE_VECTOR, PAYLOAD_INDEXES, SPARSE_VECTOR
+from zenith.index.schema import DENSE_VECTOR, PAYLOAD_INDEXES, SCHEMA_VERSION, SPARSE_VECTOR
 
 
 def inspect_collection(settings: Settings, client: Any | None = None) -> dict[str, object]:
@@ -37,10 +37,32 @@ def inspect_collection(settings: Settings, client: Any | None = None) -> dict[st
         errors.append("text-bm25 sparse vector is missing")
     if missing_indexes:
         errors.append(f"payload indexes are missing: {', '.join(missing_indexes)}")
+    schema_versions = _schema_versions(client, target)
+    if schema_versions and schema_versions != [SCHEMA_VERSION]:
+        found = ", ".join(str(version) for version in schema_versions)
+        errors.append(
+            f"payload schema version is incompatible: expected {SCHEMA_VERSION}, found {found}"
+        )
     return {
         "ready": not errors,
         "collection": settings.collection_name,
         "physical_collection": target,
         "points": info.points_count,
+        "schema_versions": schema_versions,
         "errors": errors,
     }
+
+
+def _schema_versions(client: Any, collection: str) -> list[object]:
+    records, _ = client.scroll(
+        collection_name=collection,
+        limit=1,
+        with_payload=["schema_version"],
+        with_vectors=False,
+    )
+    versions = {
+        record.payload.get("schema_version")
+        for record in records
+        if record.payload.get("schema_version") is not None
+    }
+    return sorted(versions, key=str)

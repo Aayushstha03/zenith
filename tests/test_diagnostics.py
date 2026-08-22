@@ -13,8 +13,9 @@ def settings(tmp_path: Path) -> Settings:
 
 
 class Client:
-    def __init__(self, with_alias: bool = True) -> None:
+    def __init__(self, with_alias: bool = True, schema_version: int = 4) -> None:
         self.with_alias = with_alias
+        self.schema_version = schema_version
 
     def get_aliases(self):
         aliases = (
@@ -38,6 +39,9 @@ class Client:
             points_count=38,
         )
 
+    def scroll(self, **_: object):
+        return [SimpleNamespace(payload={"schema_version": self.schema_version})], None
+
 
 def test_inspection_reports_compatible_active_collection(tmp_path: Path) -> None:
     report = inspect_collection(settings(tmp_path), Client())
@@ -46,6 +50,7 @@ def test_inspection_reports_compatible_active_collection(tmp_path: Path) -> None
         "collection": "entries",
         "physical_collection": "entries__build",
         "points": 38,
+        "schema_versions": [4],
         "errors": [],
     }
 
@@ -54,3 +59,10 @@ def test_inspection_reports_missing_alias(tmp_path: Path) -> None:
     report = inspect_collection(settings(tmp_path), Client(with_alias=False))
     assert report["ready"] is False
     assert "does not exist" in report["reason"]
+
+
+def test_inspection_rejects_incompatible_payload_schema(tmp_path: Path) -> None:
+    report = inspect_collection(settings(tmp_path), Client(schema_version=3))
+    assert report["ready"] is False
+    assert report["schema_versions"] == [3]
+    assert "expected 4, found 3" in report["errors"][0]

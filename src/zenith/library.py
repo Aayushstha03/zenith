@@ -1,0 +1,313 @@
+"""Composable public library over Zenith's parser, index, and retrieval layers."""
+
+from __future__ import annotations
+
+from pathlib import PurePosixPath
+from typing import Any
+import unicodedata
+
+from qdrant_client import QdrantClient
+
+from zenith.core.config import Settings
+from zenith.core.contracts import (
+    ContextExpansion,
+    EntryType,
+    IndexWarning,
+    KanbanBoard,
+    Link,
+    NetworkGraph,
+    NoteView,
+    ParsedNote,
+    QueryPlan,
+    RetrievalMode,
+    SearchResult,
+    WarningType,
+)
+from zenith.index.graph import GraphExporter
+from zenith.index.incremental import IncrementalIndexer, IncrementalReport
+from zenith.index.links import resolve_link, resolve_links
+from zenith.index.rebuild import IndexRebuilder, RebuildReport
+from zenith.parser.service import VaultParser
+from zenith.retrieval.context import ContextExpander
+from zenith.retrieval.service import Retriever
+
+
+class Zenith:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        vault_id: str = "personal",
+        client: Any | None = None,
+        encoders: Any | None = None,
+    ) -> None:
+        self.settings = settings
+        self.vault_id = vault_id
+        self.client = client or QdrantClient(url=settings.qdrant_url)
+        self.encoders = encoders
+        self.retriever = Retriever(
+            settings,
+            vault_id=vault_id,
+            client=self.client,
+            encoders=encoders,
+        )
+
+    def reindex(
+        self, paths: list[str] | None = None, *, full: bool = False
+    ) -> RebuildReport | IncrementalReport:
+        if full:
+            if paths:
+                raise ValueError("full rebuild does not accept paths")
+            return IndexRebuilder(
+                self.settings,
+                vault_id=self.vault_id,
+                client=self.client,
+                encoders=self.encoders,
+            ).rebuild()
+        return IncrementalIndexer(
+            self.settings,
+            vault_id=self.vault_id,
+            client=self.client,
+            encoders=self.encoders,
+        ).reindex(paths)
+
+    def find_entries(
+        self,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        tags_all: tuple[str, ...] = (),
+        tags_any: tuple[str, ...] = (),
+        note: str | None = None,
+        section: str | None = None,
+        entry_types: tuple[EntryType, ...] = (),
+        exact_text: str | None = None,
+        lexical_text: str | None = None,
+        semantic_text: str | None = None,
+        mode: RetrievalMode | None = None,
+        limit: int = 10,
+    ) -> tuple[SearchResult, ...]:
+        note_id = self.get_note(note).note_id if note is not None else None
+        selected_mode = _mode(mode, exact_text, lexical_text, semantic_text)
+        return self.retriever.search(
+            QueryPlan(
+                mode=selected_mode,
+                date_from=date_from,
+                date_to=date_to,
+                tags_all=tags_all,
+                tags_any=tags_any,
+                note_id=note_id,
+                section=section,
+                entry_types=entry_types,
+                literal_text=exact_text,
+                lexical_text=lexical_text,
+                semantic_text=semantic_text,
+                limit=limit,
+            )
+        )
+
+    def get_note(self, path_or_title: str) -> NoteView:
+        notes = self._parsed_notes()
+        needle = _key(path_or_title)
+        path_matches = [
+            note
+            for note in notes
+            if needle
+            in {
+                _key(note.path),
+                _key(PurePosixPath(note.path).with_suffix("").as_posix()),
+            }
+        ]
+        title_matches = [
+            note for note in notes if _key(note.title) == needle
+        ]
+        stem_matches = [
+            note for note in notes if _key(PurePosixPath(note.path).stem) == needle
+        ]
+        matches = path_matches or title_matches or stem_matches
+        if not matches:
+            raise LookupError(f"note not found: {path_or_title}")
+        if len(matches) > 1:
+            paths = ", ".join(sorted(note.path for note in matches))
+            raise ValueError(f"ambiguous note title {path_or_title!r}: {paths}")
+        note = matches[0]
+        entries = self.retriever.get_note_entries(note.note_id)
+        return NoteView(note.note_id, note.path, note.title, note.note_type, entries)
+
+    def get_entry(self, entry_id: str) -> SearchResult:
+        result = self.retriever.get_entry(entry_id)
+        if result is None:
+            raise LookupError(f"entry not found: {entry_id}")
+        return result
+
+    def get_outgoing_links(
+        self, note_id: str, entry_id: str | None = None
+    ) -> tuple[Link, ...]:
+        if entry_id is not None:
+            entry = self.get_entry(entry_id)
+            if entry.note_id != note_id:
+                raise ValueError(f"entry {entry_id} does not belong to note {note_id}")
+            return entry.outgoing_links
+        entries = self._entries_for_note(note_id)
+        return tuple(link for entry in entries for link in entry.outgoing_links)
+
+    def get_backlinks(self, note_id: str) -> tuple[SearchResult, ...]:
+        self._entries_for_note(note_id)
+        return self.retriever.get_backlinks(note_id)
+
+    def resolve_link(self, source_note_id: str, target_text: str) -> Link:
+        notes = self._parsed_notes()
+        return resolve_link(notes, source_note_id, target_text)
+
+    def search_within(
+        self,
+        note_id: str,
+        query: str,
+        mode: RetrievalMode,
+        section: str | None = None,
+        *,
+        limit: int = 10,
+    ) -> tuple[SearchResult, ...]:
+        self._entries_for_note(note_id)
+        return self.retriever.search_within(
+            note_id, query, mode=mode, section=section, limit=limit
+        )
+
+    def expand_context(
+        self,
+        entry_id: str,
+        *,
+        link_depth: int = 1,
+        nearby_days: int = 3,
+        max_notes: int = 5,
+    ) -> ContextExpansion:
+        return ContextExpander(self.retriever).expand(
+            entry_id,
+            link_depth=link_depth,
+            nearby_days=nearby_days,
+            max_notes=max_notes,
+        )
+
+    def get_index_warnings(
+        self, kind: WarningType | None = None, path: str | None = None
+    ) -> tuple[IndexWarning, ...]:
+        notes = resolve_links(self._parsed_notes())
+        warnings = [warning for note in notes for warning in note.warnings]
+        if kind is not None:
+            warnings = [warning for warning in warnings if warning.kind is kind]
+        if path is not None:
+            warnings = [warning for warning in warnings if _key(warning.path) == _key(path)]
+        return tuple(sorted(warnings, key=lambda item: (item.path, item.line or 0, item.kind.value)))
+
+    def list_kanban_boards(self) -> tuple[KanbanBoard, ...]:
+        cards = self.retriever.metadata_all(
+            QueryPlan(
+                mode=RetrievalMode.METADATA,
+                entry_types=(EntryType.KANBAN_CARD,),
+            )
+        )
+        grouped: dict[str, list[SearchResult]] = {}
+        for card in cards:
+            grouped.setdefault(card.note_id, []).append(card)
+        boards = [_board(group) for group in grouped.values()]
+        return tuple(sorted(boards, key=lambda board: (board.path, board.note_id)))
+
+    def get_kanban_board(self, board_name_or_path: str) -> KanbanBoard:
+        needle = _key(board_name_or_path)
+        boards = self.list_kanban_boards()
+        path_matches = [
+            board
+            for board in boards
+            if needle in {_key(board.path), _key(PurePosixPath(board.path).with_suffix("").as_posix())}
+        ]
+        matches = path_matches or [board for board in boards if _key(board.name) == needle]
+        if not matches:
+            raise LookupError(f"Kanban board not found: {board_name_or_path}")
+        if len(matches) > 1:
+            raise ValueError(f"ambiguous Kanban board: {board_name_or_path}")
+        return matches[0]
+
+    def find_kanban_cards(
+        self,
+        *,
+        board: str | None = None,
+        columns: tuple[str, ...] = (),
+        statuses: tuple[str, ...] = (),
+        checked: bool | None = None,
+        tags: tuple[str, ...] = (),
+        exact_text: str | None = None,
+        semantic_text: str | None = None,
+        limit: int = 10,
+    ) -> tuple[SearchResult, ...]:
+        board_name = self.get_kanban_board(board).name if board is not None else None
+        selected_mode = _mode(None, exact_text, None, semantic_text)
+        return self.retriever.search(
+            QueryPlan(
+                mode=selected_mode,
+                tags_all=tags,
+                entry_types=(EntryType.KANBAN_CARD,),
+                literal_text=exact_text,
+                semantic_text=semantic_text,
+                kanban_board=board_name,
+                kanban_columns=columns,
+                kanban_statuses=statuses,
+                kanban_checked=checked,
+                limit=limit,
+            )
+        )
+
+    def export_graph(self) -> NetworkGraph:
+        return GraphExporter(
+            self.settings, vault_id=self.vault_id, client=self.client
+        ).export()
+
+    def _entries_for_note(self, note_id: str) -> tuple[SearchResult, ...]:
+        results = self.retriever.get_note_entries(note_id)
+        if not results and not any(note.note_id == note_id for note in self._parsed_notes()):
+            raise LookupError(f"note not found: {note_id}")
+        return results
+
+    def _parsed_notes(self) -> tuple[ParsedNote, ...]:
+        return VaultParser(self.settings, self.vault_id).parse_vault()
+
+
+def _mode(
+    requested: RetrievalMode | None,
+    exact_text: str | None,
+    lexical_text: str | None,
+    semantic_text: str | None,
+) -> RetrievalMode:
+    if requested is not None:
+        return requested
+    if exact_text is not None:
+        return RetrievalMode.LITERAL
+    if lexical_text is not None and semantic_text is not None:
+        return RetrievalMode.HYBRID
+    if lexical_text is not None:
+        return RetrievalMode.LEXICAL
+    if semantic_text is not None:
+        return RetrievalMode.SEMANTIC
+    return RetrievalMode.METADATA
+
+
+def _board(cards: list[SearchResult]) -> KanbanBoard:
+    ordered = tuple(
+        sorted(
+            cards,
+            key=lambda card: (
+                card.kanban.column_position if card.kanban else 0,
+                card.kanban.card_position if card.kanban else 0,
+                card.entry_id,
+            ),
+        )
+    )
+    first = ordered[0]
+    assert first.kanban is not None
+    columns = tuple(
+        dict.fromkeys(card.kanban.column for card in ordered if card.kanban is not None)
+    )
+    return KanbanBoard(first.note_id, first.path, first.kanban.name, columns, ordered)
+
+
+def _key(value: str) -> str:
+    return unicodedata.normalize("NFC", value).casefold().strip().replace("\\", "/")

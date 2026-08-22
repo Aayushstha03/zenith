@@ -38,12 +38,11 @@ temporary collection.
 Phase 6 adds two library operations over that active index:
 
 ```python
-from zenith.index import GraphExporter
-from zenith.retrieval import ContextExpander, Retriever
+from zenith import Zenith
 
-retriever = Retriever(settings)
-context = ContextExpander(retriever).expand(entry_id)
-graph = GraphExporter(settings).export()
+api = Zenith(settings)
+context = api.expand_context(entry_id)
+graph = api.export_graph()
 ```
 
 Context expansion follows resolved outgoing links and backlinks with a default
@@ -52,6 +51,34 @@ returned item is labeled as direct evidence, followed-link context, backlink
 context, or nearby history. Graph export is deliberately unbounded and emits
 deterministically ordered note nodes plus internal-link, shared-tag, and exact
 shared-date edges.
+
+## Library and CLI
+
+Phase 7 exposes the index as one composable `Zenith` library object and a
+machine-readable JSON CLI. The library supports entry search, note and entry
+lookup, outgoing links, backlinks, link resolution, note-scoped search,
+bounded context expansion, warnings, Kanban operations, graph export, and
+full or incremental reindexing.
+
+The complete command, option, response-schema, exit-code, and Python API
+reference is in [docs/cli-reference.md](docs/cli-reference.md).
+
+Representative CLI commands:
+
+```bash
+docker compose exec zenith zenith index init
+docker compose exec zenith zenith search "fried chicken" --mode literal
+docker compose exec zenith zenith note get "News Resolution"
+docker compose exec zenith zenith links backlinks NOTE_ID
+docker compose exec zenith zenith context ENTRY_ID
+docker compose exec zenith zenith warnings --type missing_link
+docker compose exec zenith zenith kanban find --checked false
+docker compose exec zenith zenith graph export
+docker compose exec zenith zenith diagnose
+```
+
+Successful commands return JSON and exit zero. Invalid input or missing and
+ambiguous identifiers return a JSON error on stderr with a nonzero exit code.
 
 After model prefetch, the application health endpoint is available inside the
 Compose network and the Qdrant dashboard is available at

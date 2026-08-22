@@ -152,6 +152,8 @@ class QueryPlan:
     kanban_board: str | None = None
     kanban_column: str | None = None
     kanban_status: str | None = None
+    kanban_columns: tuple[str, ...] = ()
+    kanban_statuses: tuple[str, ...] = ()
     kanban_checked: bool | None = None
 
     def __post_init__(self) -> None:
@@ -221,6 +223,30 @@ class SearchResult:
     score: float | None = None
     verified: bool | None = None
     kanban: KanbanData | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class NoteView:
+    note_id: str
+    path: str
+    title: str
+    note_type: NoteType
+    entries: tuple[SearchResult, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class KanbanBoard:
+    note_id: str
+    path: str
+    name: str
+    columns: tuple[str, ...]
+    cards: tuple[SearchResult, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))

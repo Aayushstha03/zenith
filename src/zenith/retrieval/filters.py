@@ -64,8 +64,20 @@ def build_filter(plan: QueryPlan, vault_id: str) -> models.Filter:
         must.append(models.FieldCondition(key="board.name", match=models.MatchValue(value=plan.kanban_board)))
     if plan.kanban_column:
         must.append(models.FieldCondition(key="board.column", match=models.MatchValue(value=plan.kanban_column)))
+    if plan.kanban_columns:
+        must.append(
+            models.FieldCondition(
+                key="board.column", match=models.MatchAny(any=list(plan.kanban_columns))
+            )
+        )
     if plan.kanban_status:
         must.append(models.FieldCondition(key="board.status", match=models.MatchValue(value=plan.kanban_status)))
+    if plan.kanban_statuses:
+        must.append(
+            models.FieldCondition(
+                key="board.status", match=models.MatchAny(any=list(plan.kanban_statuses))
+            )
+        )
     if plan.kanban_checked is not None:
         must.append(
             models.FieldCondition(key="board.checked", match=models.MatchValue(value=plan.kanban_checked))

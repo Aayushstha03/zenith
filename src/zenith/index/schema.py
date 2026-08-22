@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+from typing import Any
+from uuid import uuid4
+
 from qdrant_client import models
+
+from zenith.core.config import Settings
 
 
 SCHEMA_VERSION = 4
@@ -52,3 +58,45 @@ def create_collection(client: object, name: str) -> None:
             field_schema=field_schema,
             wait=True,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class IndexInitReport:
+    collection: str
+    physical_collection: str
+    created: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def initialize_index(settings: Settings, client: Any) -> IndexInitReport:
+    target = next(
+        (
+            alias.collection_name
+            for alias in client.get_aliases().aliases
+            if alias.alias_name == settings.collection_name
+        ),
+        None,
+    )
+    if target is not None:
+        return IndexInitReport(settings.collection_name, target, False)
+
+    physical = f"{settings.collection_name}__init_{uuid4().hex}"
+    try:
+        create_collection(client, physical)
+        client.update_collection_aliases(
+            change_aliases_operations=[
+                models.CreateAliasOperation(
+                    create_alias=models.CreateAlias(
+                        collection_name=physical,
+                        alias_name=settings.collection_name,
+                    )
+                )
+            ]
+        )
+    except Exception:
+        if client.collection_exists(physical):
+            client.delete_collection(physical)
+        raise
+    return IndexInitReport(settings.collection_name, physical, True)

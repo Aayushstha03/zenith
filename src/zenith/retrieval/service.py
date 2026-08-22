@@ -67,6 +67,19 @@ class Retriever:
         records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
         return _result(records[0].payload, RetrievalMode.METADATA)
 
+    def get_note_entries(self, note_id: str) -> tuple[SearchResult, ...]:
+        return self.metadata_all(
+            QueryPlan(mode=RetrievalMode.METADATA, note_id=note_id)
+        )
+
+    def metadata_all(self, plan: QueryPlan | None = None) -> tuple[SearchResult, ...]:
+        plan = plan or QueryPlan(mode=RetrievalMode.METADATA)
+        if plan.mode is not RetrievalMode.METADATA:
+            raise ValueError("metadata_all requires metadata mode")
+        records = self._scroll_all(build_filter(plan, self.vault_id))
+        records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
+        return tuple(_result(record.payload, RetrievalMode.METADATA) for record in records)
+
     def get_backlinks(self, note_id: str) -> tuple[SearchResult, ...]:
         filter_ = models.Filter(
             must=[

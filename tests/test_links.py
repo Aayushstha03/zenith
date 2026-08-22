@@ -2,7 +2,7 @@ from pathlib import Path
 
 from zenith.core.config import Settings
 from zenith.core.contracts import LinkResolution, WarningType
-from zenith.index.links import resolve_links
+from zenith.index.links import resolve_link, resolve_links
 from zenith.parser.service import VaultParser
 
 
@@ -44,3 +44,16 @@ def test_frontmatter_alias_and_explicit_path_resolve(tmp_path: Path) -> None:
     links = source.entries[0].outgoing_links
     assert all(link.resolution is LinkResolution.RESOLVED for link in links)
     assert links[0].target_note_id == links[1].target_note_id
+
+
+def test_public_link_resolution_accepts_wiki_heading_and_alias() -> None:
+    notes = VaultParser(settings(FIXTURE_VAULT)).parse_vault()
+    source = next(note for note in notes if note.path == "freeform/Reference.md")
+    link = resolve_link(
+        notes,
+        source.note_id,
+        "[[News Resolution#2026-08-19|project update]]",
+    )
+    assert link.resolution is LinkResolution.RESOLVED
+    assert link.target_heading == "2026-08-19"
+    assert link.alias == "project update"

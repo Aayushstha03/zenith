@@ -18,6 +18,43 @@ from zenith.core.contracts import (
 
 
 def resolve_links(notes: tuple[ParsedNote, ...]) -> tuple[ParsedNote, ...]:
+    by_name, by_path = _catalog(notes)
+    return tuple(_resolve_note(note, by_name, by_path) for note in notes)
+
+
+def resolve_link(
+    notes: tuple[ParsedNote, ...], source_note_id: str, target_text: str
+) -> Link:
+    if not any(note.note_id == source_note_id for note in notes):
+        raise LookupError(f"source note not found: {source_note_id}")
+    raw = target_text.strip()
+    if raw.startswith("[[") and raw.endswith("]]"):
+        raw = raw[2:-2].strip()
+    destination, alias_separator, alias = raw.partition("|")
+    target, separator, heading = destination.partition("#")
+    if not target.strip():
+        raise ValueError("target_text must name a note")
+    by_name, by_path = _catalog(notes)
+    candidates = _candidates(target, by_name, by_path)
+    if len(candidates) == 1:
+        return Link(
+            target_text=target.strip(),
+            target_note_id=candidates[0].note_id,
+            target_heading=heading.strip() if separator and heading.strip() else None,
+            alias=alias.strip() if alias_separator and alias.strip() else None,
+            resolution=LinkResolution.RESOLVED,
+        )
+    return Link(
+        target_text=target.strip(),
+        target_heading=heading.strip() if separator and heading.strip() else None,
+        alias=alias.strip() if alias_separator and alias.strip() else None,
+        resolution=(LinkResolution.AMBIGUOUS if candidates else LinkResolution.MISSING),
+    )
+
+
+def _catalog(
+    notes: tuple[ParsedNote, ...],
+) -> tuple[defaultdict[str, list[ParsedNote]], dict[str, ParsedNote]]:
     by_name: defaultdict[str, list[ParsedNote]] = defaultdict(list)
     by_path: dict[str, ParsedNote] = {}
     for note in notes:
@@ -27,8 +64,7 @@ def resolve_links(notes: tuple[ParsedNote, ...]) -> tuple[ParsedNote, ...]:
         for name in names:
             if name.strip():
                 by_name[_key(name)].append(note)
-
-    return tuple(_resolve_note(note, by_name, by_path) for note in notes)
+    return by_name, by_path
 
 
 def _resolve_note(
