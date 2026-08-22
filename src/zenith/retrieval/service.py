@@ -54,6 +54,86 @@ class Retriever:
             return self._semantic(filter_, plan)
         return self._hybrid(filter_, plan)
 
+    def get_entry(self, entry_id: str) -> SearchResult | None:
+        filter_ = models.Filter(
+            must=[
+                models.FieldCondition(key="vault_id", match=models.MatchValue(value=self.vault_id)),
+                models.FieldCondition(key="entry_id", match=models.MatchValue(value=entry_id)),
+            ]
+        )
+        records = self._scroll_all(filter_)
+        if not records:
+            return None
+        records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
+        return _result(records[0].payload, RetrievalMode.METADATA)
+
+    def get_backlinks(self, note_id: str) -> tuple[SearchResult, ...]:
+        filter_ = models.Filter(
+            must=[
+                models.FieldCondition(key="vault_id", match=models.MatchValue(value=self.vault_id)),
+                models.FieldCondition(
+                    key="outgoing_note_ids", match=models.MatchValue(value=note_id)
+                ),
+            ]
+        )
+        records = self._scroll_all(filter_)
+        records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
+        return tuple(_result(record.payload, RetrievalMode.METADATA) for record in records)
+
+    def search_within(
+        self,
+        note_id: str,
+        query: str,
+        *,
+        mode: RetrievalMode = RetrievalMode.HYBRID,
+        section: str | None = None,
+        limit: int = 1,
+    ) -> tuple[SearchResult, ...]:
+        if mode is RetrievalMode.METADATA:
+            return self.search(
+                QueryPlan(mode=mode, note_id=note_id, section=section, limit=limit)
+            )
+        if mode is RetrievalMode.LITERAL:
+            return self.search(
+                QueryPlan(
+                    mode=mode,
+                    note_id=note_id,
+                    section=section,
+                    literal_text=query,
+                    limit=limit,
+                )
+            )
+        if mode is RetrievalMode.LEXICAL:
+            return self.search(
+                QueryPlan(
+                    mode=mode,
+                    note_id=note_id,
+                    section=section,
+                    lexical_text=query,
+                    limit=limit,
+                )
+            )
+        if mode is RetrievalMode.SEMANTIC:
+            return self.search(
+                QueryPlan(
+                    mode=mode,
+                    note_id=note_id,
+                    section=section,
+                    semantic_text=query,
+                    limit=limit,
+                )
+            )
+        return self.search(
+            QueryPlan(
+                mode=mode,
+                note_id=note_id,
+                section=section,
+                lexical_text=query,
+                semantic_text=query,
+                limit=limit,
+            )
+        )
+
     def _metadata(self, filter_: models.Filter, plan: QueryPlan) -> tuple[SearchResult, ...]:
         records = self._scroll_all(filter_)
         records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))

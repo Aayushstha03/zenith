@@ -45,6 +45,20 @@ class RetrievalMode(StrEnum):
     HYBRID = "hybrid"
 
 
+class ContextLabel(StrEnum):
+    DIRECT_EVIDENCE = "direct_evidence"
+    FOLLOWED_LINK = "followed_link"
+    BACKLINK = "backlink"
+    NEARBY_HISTORY = "nearby_history"
+    INFERENCE_INPUT = "inference_input"
+
+
+class GraphEdgeType(StrEnum):
+    INTERNAL_LINK = "internal_link"
+    SHARED_TAG = "shared_tag"
+    SHARED_DATE = "shared_date"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceRange:
     start_line: int
@@ -207,6 +221,73 @@ class SearchResult:
     score: float | None = None
     verified: bool | None = None
     kanban: KanbanData | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class ContextItem:
+    result: SearchResult
+    labels: tuple[ContextLabel, ...]
+    depth: int
+    via_note_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class TraversalDiagnostic:
+    source_note_id: str
+    target_text: str
+    resolution: LinkResolution
+    line: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class ContextExpansion:
+    source_entry_id: str
+    items: tuple[ContextItem, ...]
+    diagnostics: tuple[TraversalDiagnostic, ...] = ()
+    inspected_note_ids: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class NetworkNode:
+    note_id: str
+    path: str
+    title: str
+    note_type: NoteType
+    tags: tuple[str, ...] = ()
+    dates: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class NetworkEdge:
+    edge_id: str
+    source_note_id: str
+    target_note_id: str
+    edge_type: GraphEdgeType
+    source_entry_id: str | None = None
+    target_entry_id: str | None = None
+    line: int | None = None
+    target_heading: str | None = None
+    tags: tuple[str, ...] = ()
+    date: str | None = None
+    date_field: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NetworkGraph:
+    nodes: tuple[NetworkNode, ...]
+    edges: tuple[NetworkEdge, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))

@@ -35,6 +35,24 @@ docker compose exec zenith zenith index inspect
 A failed rebuild leaves the active alias unchanged and removes its incomplete
 temporary collection.
 
+Phase 6 adds two library operations over that active index:
+
+```python
+from zenith.index import GraphExporter
+from zenith.retrieval import ContextExpander, Retriever
+
+retriever = Retriever(settings)
+context = ContextExpander(retriever).expand(entry_id)
+graph = GraphExporter(settings).export()
+```
+
+Context expansion follows resolved outgoing links and backlinks with a default
+depth of one, a hard maximum depth of two, and at most five linked notes. Each
+returned item is labeled as direct evidence, followed-link context, backlink
+context, or nearby history. Graph export is deliberately unbounded and emits
+deterministically ordered note nodes plus internal-link, shared-tag, and exact
+shared-date edges.
+
 After model prefetch, the application health endpoint is available inside the
 Compose network and the Qdrant dashboard is available at
 <http://localhost:6333/dashboard>.

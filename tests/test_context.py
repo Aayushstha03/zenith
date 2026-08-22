@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+from dataclasses import replace
+
+import pytest
+
+from zenith.core.contracts import (
+    ContextLabel,
+    EntryType,
+    Link,
+    LinkResolution,
+    NoteType,
+    RetrievalMode,
+    SearchResult,
+)
+from zenith.retrieval.context import ContextExpander
+
+
+def result(
+    entry_id: str,
+    note_id: str,
+    *,
+    note_date: str | None = None,
+    entry_date: str | None = None,
+    entry_type: EntryType = EntryType.FREEFORM_SECTION,
+    links: tuple[Link, ...] = (),
+) -> SearchResult:
+    return SearchResult(
+        entry_id=entry_id,
+        note_id=note_id,
+        path=f"{note_id}.md",
+        note_title=note_id,
+        note_type=NoteType.STANDARD,
+        entry_type=entry_type,
+        mode=RetrievalMode.METADATA,
+        text=f"evidence from {entry_id}",
+        excerpt=f"evidence from {entry_id}",
+        heading=entry_id,
+        heading_path=(entry_id,),
+        start_line=1,
+        end_line=2,
+        note_date=note_date,
+        entry_date=entry_date,
+        tags=(),
+        outgoing_links=links,
+    )
+
+
+class FakeRetriever:
+    def __init__(self) -> None:
+        self.source = result(
+            "daily-entry",
+            "daily",
+            note_date="2026-08-20",
+            links=(
+                Link(
+                    "Project",
+                    "project",
+                    target_heading="2026-08-19",
+                    resolution=LinkResolution.RESOLVED,
+                    line=3,
+                ),
+                Link("Gone", resolution=LinkResolution.MISSING, line=4),
+                Link("Duplicate", resolution=LinkResolution.AMBIGUOUS, line=5),
+            ),
+        )
+        self.project = result(
+            "project-current",
+            "project",
+            entry_date="2026-08-19",
+            entry_type=EntryType.PROJECT_UPDATE,
+            links=(Link("Daily", "daily", resolution=LinkResolution.RESOLVED, line=8),),
+        )
+        self.backlink = result("backlink-entry", "backlink")
+        self.history = result(
+            "project-history",
+            "project",
+            entry_date="2026-08-17",
+            entry_type=EntryType.PROJECT_UPDATE,
+        )
+        self.within_calls: list[tuple[str, str | None]] = []
+
+    def get_entry(self, entry_id: str):
+        return self.source if entry_id == self.source.entry_id else None
+
+    def get_backlinks(self, note_id: str):
+        if note_id == "daily":
+            return (
+                replace(
+                    self.backlink,
+                    outgoing_links=(
+                        Link("Daily", "daily", resolution=LinkResolution.RESOLVED, line=2),
+                    ),
+                ),
+            )
+        if note_id == "project":
+            return (self.source,)
+        return ()
+
+    def search_within(
+        self, note_id: str, query: str, *, section: str | None = None, **_: object
+    ):
+        self.within_calls.append((note_id, section))
+        return {
+            "project": (self.project,),
+            "backlink": (self.backlink,),
+        }.get(note_id, ())
+
+    def search(self, plan):
+        assert plan.note_id == "project"
+        assert plan.entry_types == (EntryType.PROJECT_UPDATE,)
+        assert (plan.date_from, plan.date_to) == ("2026-08-17", "2026-08-23")
+        return (self.project, self.history)
+
+
+def test_daily_to_project_expansion_labels_context_and_terminates_cycles() -> None:
+    retriever = FakeRetriever()
+    expansion = ContextExpander(retriever).expand("daily-entry", link_depth=2)
+
+    by_id = {item.result.entry_id: item for item in expansion.items}
+    assert by_id["daily-entry"].labels == (
+        ContextLabel.DIRECT_EVIDENCE,
+        ContextLabel.INFERENCE_INPUT,
+    )
+    assert ContextLabel.FOLLOWED_LINK in by_id["project-current"].labels
+    assert ContextLabel.NEARBY_HISTORY in by_id["project-history"].labels
+    assert ContextLabel.BACKLINK in by_id["backlink-entry"].labels
+    assert expansion.inspected_note_ids == ("project", "backlink")
+    assert retriever.within_calls == [
+        ("project", "2026-08-19"),
+        ("backlink", None),
+    ]
+    assert {diagnostic.resolution for diagnostic in expansion.diagnostics} == {
+        LinkResolution.MISSING,
+        LinkResolution.AMBIGUOUS,
+    }
+    assert all(
+        ContextLabel.DIRECT_EVIDENCE not in item.labels
+        for item in expansion.items
+        if item.result.entry_id != "daily-entry"
+    )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"link_depth": 3}, "link_depth"),
+        ({"nearby_days": -1}, "nearby_days"),
+        ({"max_notes": 6}, "max_notes"),
+    ],
+)
+def test_expansion_budgets_are_enforced(kwargs: dict[str, int], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        ContextExpander(FakeRetriever()).expand("daily-entry", **kwargs)
+
+
+def test_zero_depth_returns_only_direct_evidence() -> None:
+    expansion = ContextExpander(FakeRetriever()).expand("daily-entry", link_depth=0)
+    assert [item.result.entry_id for item in expansion.items] == ["daily-entry"]
+    assert expansion.inspected_note_ids == ()

@@ -339,6 +339,35 @@ def test_outgoing_links_round_trip_with_full_evidence(tmp_path: Path) -> None:
     assert link.line == 5
 
 
+def test_entry_lookup_backlinks_and_note_scoped_search_use_resolved_payloads(
+    tmp_path: Path,
+) -> None:
+    client, settings = index_fixture_vault(tmp_path)
+    retriever = Retriever(settings, client=client, encoders=HashEncoders())
+    daily_id = str(compute_note_id("personal", "logs/2026-08-20.md"))
+    project_id = str(compute_note_id("personal", "projects/News Resolution.md"))
+
+    daily = retriever.search(
+        QueryPlan(mode=RetrievalMode.METADATA, note_id=daily_id, section="Work")
+    )[0]
+    assert retriever.get_entry(daily.entry_id) == daily
+
+    backlinks = retriever.get_backlinks(project_id)
+    assert {result.path for result in backlinks} >= {
+        "freeform/Reference.md",
+        "logs/2026-08-20.md",
+    }
+
+    within = retriever.search_within(
+        project_id,
+        "pipeline clustering",
+        mode=RetrievalMode.LEXICAL,
+        limit=1,
+    )
+    assert len(within) == 1
+    assert within[0].note_id == project_id
+
+
 def test_vault_id_isolates_results(tmp_path: Path) -> None:
     client = real_client(tmp_path)
     settings = make_settings(FIXTURE_VAULT, tmp_path)
