@@ -235,6 +235,8 @@ class Zenith:
         statuses: tuple[str, ...] = (),
         checked: bool | None = None,
         tags: tuple[str, ...] = (),
+        date_from: str | None = None,
+        date_to: str | None = None,
         exact_text: str | None = None,
         semantic_text: str | None = None,
         limit: int = 10,
@@ -245,6 +247,8 @@ class Zenith:
             QueryPlan(
                 mode=selected_mode,
                 tags_all=tags,
+                date_from=date_from,
+                date_to=date_to,
                 entry_types=(EntryType.KANBAN_CARD,),
                 literal_text=exact_text,
                 semantic_text=semantic_text,

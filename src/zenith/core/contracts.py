@@ -88,6 +88,7 @@ class KanbanData:
     column_position: int
     card_position: int
     checked: bool
+    card_time: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

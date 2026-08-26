@@ -96,7 +96,7 @@ def test_library_warning_and_kanban_operations(tmp_path: Path) -> None:
     open_todo = api.find_kanban_cards(
         board="Kitchen App", columns=("ToDo",), statuses=("todo",), checked=False, limit=20
     )
-    assert len(open_todo) == 4
+    assert len(open_todo) == 6
     assert all(card.kanban and card.kanban.column == "ToDo" for card in open_todo)
 
 
@@ -116,6 +116,6 @@ def test_library_context_graph_and_reindex_surface(tmp_path: Path) -> None:
         warnings.simplefilter("ignore", UserWarning)
         rebuilt = api.reindex(full=True)
     assert rebuilt.notes == 18
-    assert rebuilt.points == 46
+    assert rebuilt.points == 48
     with pytest.raises(ValueError, match="does not accept paths"):
         api.reindex(["Note.md"], full=True)

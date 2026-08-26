@@ -533,7 +533,8 @@ Returns one complete `KanbanBoard`. Missing or ambiguous boards exit `2`.
 ```text
 zenith kanban find [QUERY]
   [--board BOARD] [--column COLUMN]... [--status STATUS]...
-  [--checked true|false] [--tag TAG]... [--exact] [--limit N]
+  [--checked true|false] [--tag TAG]... [--date-from YYYY-MM-DD]
+  [--date-to YYYY-MM-DD] [--exact] [--limit N]
 ```
 
 Examples:
@@ -548,11 +549,19 @@ docker compose exec zenith zenith kanban find "food expiring" --checked false
 
 # Literally verified card search
 docker compose exec zenith zenith kanban find "shopping list" --exact
+
+# Cards dated on one day, from their `@{YYYY-MM-DD}` annotation
+docker compose exec zenith zenith kanban find --date-from 2026-06-06 --date-to 2026-06-06
 ```
 
 Without query text, the command performs metadata lookup. With query text it
 uses semantic retrieval unless `--exact` is set. Repeated columns and statuses
 use any-match semantics; repeated tags are all required.
+
+`--date-from` and `--date-to` filter on the card's `entry_date`, which comes
+from the Obsidian Kanban date annotation. Undated cards never match a date
+range. The same cards also appear in a plain `zenith search --date-from ...`
+next to daily sections and project updates.
 
 ## Network graph
 

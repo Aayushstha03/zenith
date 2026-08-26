@@ -15,10 +15,13 @@ def test_fixture_manifest_and_markdown_shapes_exist() -> None:
     assert manifest["logs/2026-08-20.md"]["sections"] == ["Work", "Thoughts", "Meals"]
     assert "## Thoughts\n#journal" in daily
     assert project.count("#### 2026-") == 2
-    assert kanban.count("- [ ]") == 5
+    assert kanban.count("- [ ]") == 7
     assert kanban.count("- [x]") == 1
     assert "**Complete**" in kanban
     assert "kanban:settings" in kanban
+    assert "@{2026-08-22}" in kanban
+    assert "@[[2026-08-20]]" in kanban
+    assert "@@{14:30}" in kanban
     assert manifest["freeform/Oversized.md"]["oversized_section"] == "Migration Notes"
     assert manifest["freeform/Headless Long.md"]["entry_types"] == ["freeform_chunk"]
 

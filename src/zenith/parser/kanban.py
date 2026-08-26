@@ -21,16 +21,94 @@ from zenith.core.contracts import (
 )
 from zenith.core.identity import entry_id
 from zenith.parser.tokens import estimate_tokens
-from zenith.parser.markdown import Frontmatter, Heading, meaningful_line_range, prose_between
+from zenith.parser.markdown import (
+    Frontmatter,
+    Heading,
+    meaningful_line_range,
+    prose_between,
+    valid_iso_date,
+)
 
 
 CARD_RE = re.compile(r"^- \[([ xX])\]\s+(.*)$")
+# Obsidian Kanban writes card dates and times behind configurable triggers.
+# The plugin defaults, from `defaultDateTrigger` and `defaultTimeTrigger` in
+# its own source, are `@` and `@@`.
+DEFAULT_DATE_TRIGGER = "@"
+DEFAULT_TIME_TRIGGER = "@@"
+TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 SETTINGS_START_RE = re.compile(r"^%%\s*kanban:settings\s*$")
 STATUS_ALIASES = {
     "todo": {"todo", "to do", "backlog"},
     "doing": {"doing", "in progress", "active"},
     "complete": {"complete", "completed", "done"},
 }
+
+
+def _trigger(plugin_settings: dict[str, Any] | None, key: str, fallback: str) -> str:
+    value = (plugin_settings or {}).get(key)
+    return value if isinstance(value, str) and value.strip() else fallback
+
+
+def _annotation_re(trigger: str) -> re.Pattern[str]:
+    """Match `@{value}` and the daily-note form `@[[value]]` for one trigger."""
+    escaped = re.escape(trigger)
+    return re.compile(rf"{escaped}(?:\{{([^}}]*)\}}|\[\[([^\]]*)\]\])")
+
+
+def card_annotations(
+    text: str, path: str, line: int, date_trigger: str, time_trigger: str
+) -> tuple[str, str | None, str | None, tuple[str, ...], list[IndexWarning]]:
+    """Pull dates and times out of card text and hand back the clean prose.
+
+    The plugin syntax is board configuration, not prose, so it never reaches
+    the searchable text or the embedding input.
+    """
+    warnings: list[IndexWarning] = []
+    consumed: list[str] = []
+    date: str | None = None
+    time: str | None = None
+    seen_dates: list[str] = []
+
+    # A longer trigger can start with a shorter one, so strip longest first.
+    for kind, trigger in sorted(
+        (("time", time_trigger), ("date", date_trigger)), key=lambda item: -len(item[1])
+    ):
+        def take(match: re.Match[str]) -> str:
+            nonlocal date, time
+            raw = (match.group(1) if match.group(1) is not None else match.group(2) or "").strip()
+            consumed.append(raw)
+            if kind == "time":
+                if TIME_RE.fullmatch(raw):
+                    time = time or raw
+                    return " "
+                warnings.append(
+                    IndexWarning(WarningType.INVALID_DATE, path, f"invalid Kanban card time: {raw}", line)
+                )
+                return " "
+            valid = valid_iso_date(raw)
+            if valid is None:
+                warnings.append(
+                    IndexWarning(WarningType.INVALID_DATE, path, f"invalid Kanban card date: {raw}", line)
+                )
+                return " "
+            seen_dates.append(valid)
+            date = date or valid
+            return " "
+
+        text = _annotation_re(trigger).sub(take, text)
+
+    if len({value for value in seen_dates}) > 1:
+        warnings.append(
+            IndexWarning(
+                WarningType.INVALID_DATE,
+                path,
+                f"Kanban card carries more than one date: {', '.join(sorted(set(seen_dates)))}; "
+                f"using {date}",
+                line,
+            )
+        )
+    return " ".join(text.split()), date, time, tuple(consumed), warnings
 
 
 def canonical_status(column: str) -> str | None:
@@ -77,6 +155,9 @@ def parse_kanban_entries(
     if settings_warning:
         warnings.append(settings_warning)
 
+    date_trigger = _trigger(plugin_settings, "date-trigger", DEFAULT_DATE_TRIGGER)
+    time_trigger = _trigger(plugin_settings, "time-trigger", DEFAULT_TIME_TRIGGER)
+
     columns = [heading for heading in parsed_headings if heading.level == 2]
     entries: list[ParsedEntry] = []
     for column_position, column in enumerate(columns):
@@ -97,6 +178,15 @@ def parse_kanban_entries(
             visible = re.sub(r"^\[[ xX]\]\s*", "", prose.text).strip()
             if not visible:
                 visible = match.group(2).strip()
+            visible, card_date, card_time, consumed, date_warnings = card_annotations(
+                visible, path, line_index + 1, date_trigger, time_trigger
+            )
+            warnings.extend(date_warnings)
+            if not visible:
+                visible = match.group(2).strip()
+            # `@[[2026-06-06]]` is a date the plugin renders as a daily-note
+            # link. It was consumed as a date, so it is not also a real link.
+            links = tuple(link for link in prose.links if link.target_text not in consumed)
             structural_key = f"{column.text}/{card_position}:{visible.casefold()}"
             card_id = str(entry_id(note_uuid, EntryType.KANBAN_CARD, structural_key))
             body_range = meaningful_line_range(lines, line_index, next_card)
@@ -111,13 +201,15 @@ def parse_kanban_entries(
                     text=visible,
                     embedding_text=(
                         f"Board: {title}\nColumn: {column.text}\n"
-                        f"Status: {canonical_status(column.text) or 'custom'}\nTask: {visible}"
+                        + (f"Date: {card_date}\n" if card_date else "")
+                        + f"Status: {canonical_status(column.text) or 'custom'}\nTask: {visible}"
                     ),
                     heading=column.text,
                     heading_path=column.path,
                     source=SourceRange(line_index + 1, body_range.end_line if body_range else line_index + 1),
+                    entry_date=card_date,
                     tags=prose.tags,
-                    outgoing_links=prose.links,
+                    outgoing_links=links,
                     web_links=prose.web_links,
                     content_hash=hashlib.sha256(visible.encode("utf-8")).hexdigest(),
                     kanban=KanbanData(
@@ -127,6 +219,7 @@ def parse_kanban_entries(
                         column_position=column_position,
                         card_position=card_position,
                         checked=match.group(1).casefold() == "x",
+                        card_time=card_time,
                     ),
                 )
             )

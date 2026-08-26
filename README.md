@@ -71,6 +71,33 @@ Kanban card, which is one atomic point. Both emit a
 `truncated_embedding_input` warning instead of losing text silently. Set
 `ZENITH_DENSE_TOKEN_WINDOW` to match a different dense model.
 
+## Kanban card dates
+
+Kanban cards carry dates like every other entry type. Zenith reads the Obsidian
+Kanban date annotation from card text and stores it as the card's `entry_date`,
+so a date query returns cards next to daily sections and project updates:
+
+```markdown
+- [ ] Buy saffron @{2026-05-12}
+- [x] Finished kitchen setup @{2026-08-20} @@{14:30}
+- [ ] Dated by daily-note link @[[2026-08-20]]
+```
+
+Zenith records the date only. It does not decide whether a date means due,
+scheduled, or done, because the plugin does not record that either. Every card
+payload already carries `board.checked` and `board.status`, so a caller can
+read that meaning from the board's own state.
+
+The `@` and `@@` triggers come from the board's `kanban:settings` block when it
+sets `date-trigger` or `time-trigger`, and fall back to the plugin defaults. The
+time is kept as `board.card_time`. A date that is not a real calendar date
+raises an `invalid_date` warning and dates nothing. A card carrying more than
+one date warns and keeps the first.
+
+The annotation never reaches the searchable text or the embedding input, so
+plugin syntax cannot pollute BM25 terms or dense vectors. `@[[2026-08-20]]` is
+read as a date, not as a link to a note named `2026-08-20`.
+
 ## Library and CLI
 
 Phase 7 exposes the index as one composable `Zenith` library object and a

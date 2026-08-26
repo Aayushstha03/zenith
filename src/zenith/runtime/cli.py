@@ -132,6 +132,8 @@ def build_parser() -> argparse.ArgumentParser:
     kanban_find.add_argument("--status", action="append", default=[])
     kanban_find.add_argument("--checked", choices=("true", "false"))
     kanban_find.add_argument("--tag", action="append", default=[])
+    kanban_find.add_argument("--date-from")
+    kanban_find.add_argument("--date-to")
     kanban_find.add_argument("--exact", action="store_true")
     kanban_find.add_argument("--limit", type=int, default=10)
 
@@ -278,6 +280,8 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
                 statuses=tuple(args.status),
                 checked=_optional_bool(args.checked),
                 tags=tuple(args.tag),
+                date_from=args.date_from,
+                date_to=args.date_to,
                 exact_text=args.query if args.exact else None,
                 semantic_text=args.query if args.query and not args.exact else None,
                 limit=args.limit,

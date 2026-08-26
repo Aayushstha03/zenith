@@ -64,6 +64,8 @@
       "kanban_card",
       "kanban_card",
       "kanban_card",
+      "kanban_card",
+      "kanban_card",
       "kanban_card"
     ],
     "columns": [
@@ -72,6 +74,8 @@
       "complete"
     ],
     "checked": [
+      false,
+      false,
       false,
       false,
       false,
