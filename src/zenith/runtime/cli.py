@@ -175,11 +175,14 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         server.serve_forever()
         return 0
     if args.command == "health":
-        report = health_report(settings)
+        report = health_report(settings, include_llm=True)
         _print(report)
         return 0 if report["ready"] else 1
     if args.command == "diagnose":
-        report = {"health": health_report(settings), "index": inspect_collection(settings)}
+        report = {
+            "health": health_report(settings, include_llm=True),
+            "index": inspect_collection(settings),
+        }
         _print(report)
         return 0 if report["health"]["ready"] and report["index"]["ready"] else 1
     if args.command == "parse":

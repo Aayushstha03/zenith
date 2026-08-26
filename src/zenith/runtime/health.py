@@ -27,7 +27,39 @@ def index_health(settings: Settings) -> dict[str, Any]:
         return {"ready": False, "collection": settings.collection_name, "error": str(exc)}
 
 
-def health_report(settings: Settings) -> dict[str, Any]:
+def llm_health(settings: Settings, timeout: float = 1.0) -> dict[str, Any]:
+    """Report whether LM Studio is serving the configured answering model.
+
+    A closed LM Studio is a normal state, not a fault: it frees the VRAM that
+    parsing, indexing, and the watcher must never compete for.
+    """
+    report: dict[str, Any] = {
+        "base_url": settings.llm_base_url,
+        "model": settings.llm_model,
+        "required": False,
+    }
+    try:
+        with urlopen(f"{settings.llm_base_url}/models", timeout=timeout) as response:
+            served = json.load(response)
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+        return {**report, "ready": False, "error": str(exc)}
+    available = sorted(
+        str(item.get("id", "")) for item in served.get("data", []) if item.get("id")
+    )
+    return {
+        **report,
+        "ready": settings.llm_model in available,
+        "available_models": available,
+    }
+
+
+def health_report(settings: Settings, *, include_llm: bool = False) -> dict[str, Any]:
+    """Combine every dependency the container needs to be considered healthy.
+
+    `include_llm` is off by default because the container liveness probe must
+    not depend on a desktop application, and must not spend its timeout budget
+    waiting for one. `zenith health` and `zenith diagnose` turn it on.
+    """
     config_errors = settings.validate()
     qdrant = qdrant_health(settings)
     models = readiness(settings)
@@ -48,7 +80,7 @@ def health_report(settings: Settings) -> dict[str, Any]:
         and models["ready"]
         and vault["ready"]
     )
-    return {
+    report = {
         "ready": ready,
         "configuration": {"ready": not config_errors, "errors": list(config_errors)},
         "qdrant": qdrant,
@@ -56,6 +88,10 @@ def health_report(settings: Settings) -> dict[str, Any]:
         "models": models,
         "vault": vault,
     }
+    if include_llm:
+        # Deliberately absent from `ready`: the answering model is optional.
+        report["llm"] = llm_health(settings)
+    return report
 
 
 def encode_report(report: dict[str, Any]) -> bytes:

@@ -131,11 +131,27 @@ docker compose exec zenith zenith health
 ```
 
 Checks configuration, Qdrant connectivity, active-index compatibility, pinned
-model readiness, and the vault mount.
+model readiness, the vault mount, and LM Studio.
+
+The `llm` block reports the answering model and is marked `"required": false`.
+It never changes the top-level `ready` flag and never changes the exit code. A
+closed LM Studio is a normal state: parsing, indexing, and the watcher run
+without it, so the index never competes for VRAM.
+
+The container liveness endpoint at `/healthz` omits the `llm` block entirely.
+Container health must not depend on a desktop application, or spend its timeout
+budget waiting for one.
 
 ```json
 {
   "configuration": {"errors": [], "ready": true},
+  "llm": {
+    "available_models": ["qwen3.5-9b"],
+    "base_url": "http://host.docker.internal:1234/v1",
+    "model": "qwen3.5-9b",
+    "ready": true,
+    "required": false
+  },
   "index": {
     "collection": "zenith_entries",
     "errors": [],

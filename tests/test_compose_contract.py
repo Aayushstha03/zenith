@@ -17,6 +17,10 @@ def test_compose_contract_is_local_persistent_and_read_only() -> None:
     assert "condition: service_healthy" in compose
     assert 'profiles: ["tools"]' in compose
     assert 'command: ["zenith", "models", "prefetch"]' in compose
+    # LM Studio runs on the host, so the zenith service needs a routed network
+    # and a host gateway. Qdrant and the index path stay unroutable.
+    assert '"host.docker.internal:host-gateway"' in compose
+    assert compose.count("internal: true") == 1
 
 
 def test_documented_env_contains_all_compose_settings() -> None:
@@ -36,6 +40,9 @@ def test_documented_env_contains_all_compose_settings() -> None:
         "ZENITH_KNOWN_TAGS",
         "ZENITH_TAG_ALIASES",
         "RESTART_POLICY",
+        "ZENITH_LLM_BASE_URL",
+        "ZENITH_LLM_MODEL",
+        "ZENITH_LLM_API_KEY",
     }
     for name in required:
         assert f"{name}=" in env

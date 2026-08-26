@@ -67,3 +67,25 @@ def test_a_tiny_token_window_is_rejected(tmp_path: Path) -> None:
         dense_token_window=8,
     )
     assert any("at least 32" in error for error in settings.validate())
+
+
+def test_llm_settings_default_to_lm_studio_on_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ZENITH_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("ZENITH_LLM_MODEL", raising=False)
+    settings = Settings.from_env()
+    assert settings.llm_base_url == "http://host.docker.internal:1234/v1"
+    assert settings.llm_model == "qwen3.5-9b"
+    assert settings.validate() == ()
+
+    monkeypatch.setenv("ZENITH_LLM_BASE_URL", "http://127.0.0.1:1234/v1/")
+    assert Settings.from_env().llm_base_url == "http://127.0.0.1:1234/v1"
+
+
+def test_llm_settings_reject_a_non_http_base_url(tmp_path: Path) -> None:
+    settings = Settings(
+        "http://qdrant", tmp_path, tmp_path, "entries", "0.0.0.0", 8080,
+        llm_base_url="localhost:1234", llm_model="",
+    )
+    errors = settings.validate()
+    assert "ZENITH_LLM_BASE_URL must use http or https" in errors
+    assert "ZENITH_LLM_MODEL cannot be empty" in errors

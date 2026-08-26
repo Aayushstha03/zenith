@@ -28,6 +28,10 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
+    # LM Studio serves the answering model from the host, not from a container.
+    # Enable "Serve on Local Network" in LM Studio so it binds beyond loopback.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       ZENITH_QDRANT_URL: http://qdrant:6333
       ZENITH_VAULT_PATH: /vault
@@ -40,6 +44,9 @@ services:
       ZENITH_EXCLUDED_DIRECTORIES: ${ZENITH_EXCLUDED_DIRECTORIES}
       ZENITH_KNOWN_TAGS: ${ZENITH_KNOWN_TAGS}
       ZENITH_TAG_ALIASES: ${ZENITH_TAG_ALIASES}
+      ZENITH_LLM_BASE_URL: ${ZENITH_LLM_BASE_URL}
+      ZENITH_LLM_MODEL: ${ZENITH_LLM_MODEL}
+      ZENITH_LLM_API_KEY: ${ZENITH_LLM_API_KEY}
     volumes:
       - type: bind
         source: ${ZENITH_VAULT_PATH}
@@ -54,6 +61,7 @@ services:
       start_period: 10s
     networks:
       - zenith-internal
+      - llm
 
   model-prefetch:
     profiles: ["tools"]
@@ -69,8 +77,13 @@ services:
     command: ["zenith", "models", "prefetch"]
 
 networks:
+  # Qdrant and the index path stay unreachable from outside the project.
   zenith-internal:
     internal: true
+  # Reaching LM Studio on the host needs a routed network. Docker has no
+  # host-only network, so joining this grants the zenith service outbound
+  # access. Nothing else joins it.
+  llm:
   dashboard:
 
 volumes:

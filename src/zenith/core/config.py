@@ -16,6 +16,14 @@ SPARSE_MODEL = "Qdrant/bm25"
 # for. `LocalEncoders` pins the real tokenizer to this value.
 DENSE_TOKEN_WINDOW = 256
 
+# The answering model is served by LM Studio on the host, over its
+# OpenAI-compatible API. It is optional: parsing, indexing, and the watcher run
+# with LM Studio closed so the index never competes for VRAM. LM Studio ignores
+# the API key, but the OpenAI client requires a non-empty one.
+LLM_BASE_URL = "http://host.docker.internal:1234/v1"
+LLM_MODEL = "qwen3.5-9b"
+LLM_API_KEY = "lm-studio"
+
 
 def _positive_int(name: str, default: int) -> int:
     raw = os.getenv(name, str(default))
@@ -58,6 +66,9 @@ class Settings:
     known_tags: tuple[str, ...] = ("journal", "recipe", "work")
     tag_aliases: tuple[tuple[str, str], ...] = (("journaling", "journal"), ("recipes", "recipe"))
     dense_token_window: int = DENSE_TOKEN_WINDOW
+    llm_base_url: str = LLM_BASE_URL
+    llm_model: str = LLM_MODEL
+    llm_api_key: str = LLM_API_KEY
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -76,6 +87,9 @@ class Settings:
             known_tags=_csv("ZENITH_KNOWN_TAGS", "journal,recipe,work"),
             tag_aliases=_aliases("ZENITH_TAG_ALIASES", "journaling:journal,recipes:recipe"),
             dense_token_window=_positive_int("ZENITH_DENSE_TOKEN_WINDOW", DENSE_TOKEN_WINDOW),
+            llm_base_url=os.getenv("ZENITH_LLM_BASE_URL", LLM_BASE_URL).rstrip("/"),
+            llm_model=os.getenv("ZENITH_LLM_MODEL", LLM_MODEL).strip(),
+            llm_api_key=os.getenv("ZENITH_LLM_API_KEY", LLM_API_KEY),
         )
 
     def validate(self) -> tuple[str, ...]:
@@ -104,4 +118,10 @@ class Settings:
                 "ZENITH_DENSE_TOKEN_WINDOW must not exceed 512, the positional limit "
                 "of the supported dense models"
             )
+        if not self.llm_base_url.startswith(("http://", "https://")):
+            errors.append("ZENITH_LLM_BASE_URL must use http or https")
+        if not self.llm_model:
+            errors.append("ZENITH_LLM_MODEL cannot be empty")
+        if not self.llm_api_key:
+            errors.append("ZENITH_LLM_API_KEY cannot be empty")
         return tuple(errors)
