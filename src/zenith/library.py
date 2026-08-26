@@ -27,6 +27,7 @@ from zenith.index.graph import GraphExporter
 from zenith.index.incremental import IncrementalIndexer, IncrementalReport
 from zenith.index.links import resolve_link, resolve_links
 from zenith.index.rebuild import IndexRebuilder, RebuildReport
+from zenith.parser.discovery import discover_markdown
 from zenith.parser.service import VaultParser
 from zenith.retrieval.context import ContextExpander
 from zenith.retrieval.service import Retriever
@@ -45,6 +46,9 @@ class Zenith:
         self.vault_id = vault_id
         self.client = client or QdrantClient(url=settings.qdrant_url)
         self.encoders = encoders
+        self._notes: tuple[ParsedNote, ...] | None = None
+        self._resolved: tuple[ParsedNote, ...] | None = None
+        self._fingerprint: tuple[tuple[str, int, int], ...] | None = None
         self.retriever = Retriever(
             settings,
             vault_id=vault_id,
@@ -191,7 +195,7 @@ class Zenith:
     def get_index_warnings(
         self, kind: WarningType | None = None, path: str | None = None
     ) -> tuple[IndexWarning, ...]:
-        notes = resolve_links(self._parsed_notes())
+        notes = self._resolved_notes()
         warnings = [warning for note in notes for warning in note.warnings]
         if kind is not None:
             warnings = [warning for warning in warnings if warning.kind is kind]
@@ -272,7 +276,34 @@ class Zenith:
         return results
 
     def _parsed_notes(self) -> tuple[ParsedNote, ...]:
-        return VaultParser(self.settings, self.vault_id).parse_vault()
+        """Return the parsed vault, reparsing only when a Markdown file changed.
+
+        Every call fingerprints the vault, which costs one stat per note. That
+        is far cheaper than reparsing, and it notices edits made by the watcher
+        or by any other process, not only edits made through `reindex`.
+        """
+        fingerprint = self._vault_fingerprint()
+        if self._notes is None or self._fingerprint != fingerprint:
+            self._notes = VaultParser(self.settings, self.vault_id).parse_vault()
+            self._fingerprint = fingerprint
+            self._resolved = None
+        return self._notes
+
+    def _resolved_notes(self) -> tuple[ParsedNote, ...]:
+        notes = self._parsed_notes()
+        if self._resolved is None:
+            self._resolved = resolve_links(notes)
+        return self._resolved
+
+    def _vault_fingerprint(self) -> tuple[tuple[str, int, int], ...]:
+        vault = self.settings.vault_path.resolve()
+        fingerprint: list[tuple[str, int, int]] = []
+        for path in discover_markdown(self.settings):
+            stat = path.stat()
+            fingerprint.append(
+                (path.relative_to(vault).as_posix(), stat.st_mtime_ns, stat.st_size)
+            )
+        return tuple(fingerprint)
 
 
 def _mode(

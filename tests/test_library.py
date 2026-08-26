@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import shutil
 import warnings
 
 import pytest
@@ -10,6 +11,7 @@ from zenith.core.contracts import LinkResolution, RetrievalMode, WarningType
 from zenith.core.identity import note_id
 from zenith.index.rebuild import IndexRebuilder
 from zenith.library import Zenith
+from zenith.parser.service import VaultParser
 
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
@@ -119,3 +121,45 @@ def test_library_context_graph_and_reindex_surface(tmp_path: Path) -> None:
     assert rebuilt.points == 45
     with pytest.raises(ValueError, match="does not accept paths"):
         api.reindex(["Note.md"], full=True)
+
+
+def test_library_parses_the_vault_once_until_a_note_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = tmp_path / "vault"
+    shutil.copytree(FIXTURE_VAULT, vault)
+    settings = Settings(
+        "http://unused", vault, tmp_path / "models", "entries", "127.0.0.1", 8080
+    )
+    client = QdrantClient(path=str(tmp_path / "qdrant"))
+    encoders = HashEncoders()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        IndexRebuilder(settings, client=client, encoders=encoders).rebuild()
+    api = Zenith(settings, client=client, encoders=encoders)
+
+    parses: list[object] = []
+    original = VaultParser.parse_vault
+
+    def counting(self: VaultParser, requested: list[str] | None = None):
+        parses.append(requested)
+        return original(self, requested)
+
+    monkeypatch.setattr(VaultParser, "parse_vault", counting)
+
+    project = api.get_note("News Resolution")
+    api.get_note("News Resolution")
+    api.get_index_warnings()
+    api.get_index_warnings()
+    api.resolve_link(project.note_id, "Kitchen App")
+    assert len(parses) == 1
+
+    note = vault / "projects" / "News Resolution.md"
+    note.write_text(
+        note.read_text(encoding="utf-8") + "\n## Added\n\nNew prose.\n",
+        encoding="utf-8",
+    )
+    api.get_note("News Resolution")
+    assert len(parses) == 2
+    api.get_index_warnings()
+    assert len(parses) == 2
