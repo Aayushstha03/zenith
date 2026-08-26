@@ -163,3 +163,26 @@ def test_library_parses_the_vault_once_until_a_note_changes(
     assert len(parses) == 2
     api.get_index_warnings()
     assert len(parses) == 2
+
+
+def test_library_reads_one_complete_note_from_the_vault(tmp_path: Path) -> None:
+    api = indexed_api(tmp_path)
+    note = api.read_note("News Resolution")
+    assert note.path == "projects/News Resolution.md"
+    assert note.note_id == api.get_note("News Resolution").note_id
+    on_disk = (FIXTURE_VAULT / "projects" / "News Resolution.md").read_text(encoding="utf-8")
+    assert note.content == on_disk
+
+    # The file itself, not the indexed prose: entry text is cleaned and split.
+    entries = api.get_note("News Resolution").entries
+    assert len(note.content) > max(len(entry.text) for entry in entries)
+
+    assert api.read_note("projects/News Resolution.md").content == on_disk
+    assert api.read_note("projects/News Resolution").content == on_disk
+
+    with pytest.raises(ValueError, match="ambiguous note title"):
+        api.read_note("Shared")
+    with pytest.raises(LookupError, match="note not found"):
+        api.read_note("Unknown")
+    with pytest.raises(LookupError, match="note not found"):
+        api.read_note("../../../etc/passwd")

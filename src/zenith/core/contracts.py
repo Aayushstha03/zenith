@@ -243,6 +243,20 @@ class NoteView:
 
 
 @dataclass(frozen=True, slots=True)
+class NoteContent:
+    """One complete Markdown note, exactly as it is stored in the vault."""
+
+    note_id: str
+    path: str
+    title: str
+    note_type: NoteType
+    content: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
 class KanbanBoard:
     note_id: str
     path: str

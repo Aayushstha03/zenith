@@ -86,6 +86,8 @@ def build_parser() -> argparse.ArgumentParser:
     note_commands = note.add_subparsers(dest="note_command", required=True)
     note_get = note_commands.add_parser("get")
     note_get.add_argument("path_or_title")
+    note_read = note_commands.add_parser("read", help="read one complete note as Markdown")
+    note_read.add_argument("path_or_title")
 
     entry = commands.add_parser("entry", help="retrieve entries")
     entry_commands = entry.add_subparsers(dest="entry_command", required=True)
@@ -232,7 +234,10 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         )
         _print({"results": [result.to_dict() for result in results]})
     elif args.command == "note":
-        _print(api.get_note(args.path_or_title).to_dict())
+        if args.note_command == "read":
+            _print(api.read_note(args.path_or_title).to_dict())
+        else:
+            _print(api.get_note(args.path_or_title).to_dict())
     elif args.command == "entry":
         _print(api.get_entry(args.entry_id).to_dict())
     elif args.command == "links":

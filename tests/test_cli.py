@@ -24,6 +24,7 @@ def cli_settings(monkeypatch, tmp_path: Path) -> Settings:
         ["index", "rebuild"],
         ["search", "query", "--mode", "hybrid"],
         ["note", "get", "Note"],
+        ["note", "read", "Note"],
         ["entry", "get", "entry-id"],
         ["links", "outgoing", "note-id"],
         ["links", "backlinks", "note-id"],
@@ -90,3 +91,30 @@ def test_unknown_command_is_json_and_exit_two(cli_settings, capsys) -> None:
     error = json.loads(capsys.readouterr().err)
     assert code == 2
     assert error["error"]["type"] == "ValueError"
+
+
+def test_note_read_command_emits_the_markdown_file(monkeypatch, cli_settings, capsys) -> None:
+    class FakeZenith:
+        def __init__(self, settings: Settings) -> None:
+            assert settings is cli_settings
+
+        def read_note(self, path_or_title: str):
+            assert path_or_title == "News Resolution"
+            return SimpleNamespace(
+                to_dict=lambda: {
+                    "content": "# News Resolution\n",
+                    "note_id": "uuid",
+                    "note_type": "standard",
+                    "path": "projects/News Resolution.md",
+                    "title": "News Resolution",
+                }
+            )
+
+        def get_note(self, path_or_title: str):  # pragma: no cover - must not run
+            raise AssertionError("note read must not fall through to note get")
+
+    monkeypatch.setattr("zenith.runtime.cli.Zenith", FakeZenith)
+    assert main(["note", "read", "News Resolution"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["content"] == "# News Resolution\n"
+    assert list(payload) == sorted(payload)

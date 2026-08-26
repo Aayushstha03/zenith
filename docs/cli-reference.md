@@ -385,6 +385,30 @@ stem. Ambiguous titles or stems return exit code `2` rather than guessing.
 }
 ```
 
+### `note read PATH_OR_TITLE`
+
+```bash
+docker compose exec zenith zenith note read "News Resolution"
+```
+
+Returns the complete Markdown file, including frontmatter, code, and URLs.
+Accepts the same identifiers as `note get`, and reports the same exit code `2`
+for an ambiguous or missing note.
+
+Use `note get` to see how a note was indexed, and `note read` to see what the
+note actually says. Indexed entries carry cleaned prose split to fit the dense
+model; this command carries the file.
+
+```json
+{
+  "content": "# News Resolution\n",
+  "note_id": "uuid",
+  "note_type": "standard",
+  "path": "projects/News Resolution.md",
+  "title": "News Resolution"
+}
+```
+
 ### `entry get ENTRY_ID`
 
 ```bash
@@ -628,6 +652,7 @@ api = Zenith(Settings.from_env())
 | `reindex(paths=None, full=False)` | `index update` / `index rebuild` |
 | `find_entries(...)` | `search` |
 | `get_note(path_or_title)` | `note get` |
+| `read_note(path_or_title)` | `note read` |
 | `get_entry(entry_id)` | `entry get` |
 | `get_outgoing_links(note_id, entry_id=None)` | `links outgoing` |
 | `get_backlinks(note_id)` | `links backlinks` |

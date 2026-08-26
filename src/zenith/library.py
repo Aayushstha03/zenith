@@ -16,6 +16,7 @@ from zenith.core.contracts import (
     KanbanBoard,
     Link,
     NetworkGraph,
+    NoteContent,
     NoteView,
     ParsedNote,
     QueryPlan,
@@ -111,6 +112,34 @@ class Zenith:
         )
 
     def get_note(self, path_or_title: str) -> NoteView:
+        note = self._match_note(path_or_title)
+        entries = self.retriever.get_note_entries(note.note_id)
+        return NoteView(note.note_id, note.path, note.title, note.note_type, entries)
+
+    def read_note(self, path_or_title: str) -> NoteContent:
+        """Read one complete note from the vault as Markdown.
+
+        Indexed entries are split to fit the dense model and carry cleaned
+        prose. This returns the file itself, including frontmatter, code, and
+        URLs, for the cases where the whole note is the answer.
+        """
+        note = self._match_note(path_or_title)
+        vault = self.settings.vault_path.resolve()
+        # `note.path` comes from vault discovery, so it is already inside the
+        # vault and outside every excluded directory. Re-check anyway: no
+        # caller-supplied string may ever become a path that leaves the mount.
+        resolved = (vault / note.path).resolve()
+        if not resolved.is_relative_to(vault):
+            raise ValueError(f"path escapes vault: {note.path}")
+        return NoteContent(
+            note_id=note.note_id,
+            path=note.path,
+            title=note.title,
+            note_type=note.note_type,
+            content=resolved.read_text(encoding="utf-8"),
+        )
+
+    def _match_note(self, path_or_title: str) -> ParsedNote:
         notes = self._parsed_notes()
         needle = _key(path_or_title)
         path_matches = [
@@ -134,9 +163,7 @@ class Zenith:
         if len(matches) > 1:
             paths = ", ".join(sorted(note.path for note in matches))
             raise ValueError(f"ambiguous note title {path_or_title!r}: {paths}")
-        note = matches[0]
-        entries = self.retriever.get_note_entries(note.note_id)
-        return NoteView(note.note_id, note.path, note.title, note.note_type, entries)
+        return matches[0]
 
     def get_entry(self, entry_id: str) -> SearchResult:
         result = self.retriever.get_entry(entry_id)
