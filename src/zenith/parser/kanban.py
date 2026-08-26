@@ -182,8 +182,9 @@ def parse_kanban_entries(
                 visible, path, line_index + 1, date_trigger, time_trigger
             )
             warnings.extend(date_warnings)
-            if not visible:
-                visible = match.group(2).strip()
+            # No second fallback to the raw line here: a card whose whole text
+            # is an annotation has no prose, and reinstating the raw text would
+            # put the plugin syntax straight back into the searchable text.
             # `@[[2026-06-06]]` is a date the plugin renders as a daily-note
             # link. It was consumed as a date, so it is not also a real link.
             links = tuple(link for link in prose.links if link.target_text not in consumed)

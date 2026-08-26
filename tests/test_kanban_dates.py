@@ -120,3 +120,22 @@ def test_find_kanban_cards_accepts_a_date_range() -> None:
 
     parameters = signature(Zenith.find_kanban_cards).parameters
     assert "date_from" in parameters and "date_to" in parameters
+
+
+def test_a_card_that_is_only_an_annotation_leaks_no_plugin_syntax(tmp_path: Path) -> None:
+    (tmp_path / "kanban").mkdir()
+    (tmp_path / "kanban" / "Bare.md").write_text(
+        "---\nkanban-plugin: board\n---\n\n## ToDo\n\n"
+        "- [ ] @{2026-05-12}\n- [ ] @@{14:30}\n- [ ] @[[2026-06-06]]\n"
+    )
+    entries = parse(tmp_path)["kanban/Bare.md"].entries
+    assert len(entries) == 3
+    for entry in entries:
+        # The card has no prose at all. Falling back to the raw line would put
+        # the plugin syntax straight back into the searchable text.
+        assert entry.text == ""
+        for marker in ("@{", "@@{", "@[["):
+            assert marker not in entry.text
+            assert marker not in entry.embedding_text
+    assert [entry.entry_date for entry in entries] == ["2026-05-12", None, "2026-06-06"]
+    assert entries[1].kanban.card_time == "14:30"

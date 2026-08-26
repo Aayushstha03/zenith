@@ -55,19 +55,36 @@ def test_a_headless_note_produces_freeform_chunks() -> None:
 
 
 def test_every_fixture_entry_fits_the_dense_token_budget() -> None:
+    # Assert the invariant that actually matters: the complete embedding input,
+    # labels included, stays inside the window. Reconstructing the label prefix
+    # per entry type is fragile, and Kanban cards do not use a `Content:` label
+    # at all.
+    window = settings(FIXTURE_VAULT).dense_token_window
     for note in parse(FIXTURE_VAULT).values():
         for entry in note.entries:
-            # The label block always ends at the first "Content: " marker.
-            prefix = entry.embedding_text.split("Content: ", 1)[0] + "Content: "
-            budget = content_budget(prefix)
-            assert estimate_tokens(entry.text) <= budget, f"{entry.path} {entry.heading}"
+            estimate = estimate_tokens(entry.embedding_text)
+            assert estimate <= window, f"{entry.path} {entry.heading or entry.text!r} = {estimate}"
 
 
-def test_chunk_line_ranges_stay_inside_the_note_and_never_overlap(tmp_path: Path) -> None:
+def test_chunk_line_ranges_stay_inside_the_note_and_never_overlap() -> None:
     for note in parse(FIXTURE_VAULT).values():
         total = len((FIXTURE_VAULT / note.path).read_text().splitlines())
         for entry in note.entries:
             assert 1 <= entry.source.start_line <= entry.source.end_line <= total
+
+        # Chunks of one section must partition it, not overlap. Compare only
+        # within a heading, because a section's first chunk starts at the
+        # heading line and Kanban cards are ordered by column, not by line.
+        by_heading: dict[tuple[str, ...], list] = {}
+        for entry in note.entries:
+            if entry.entry_type is not EntryType.KANBAN_CARD:
+                by_heading.setdefault(entry.heading_path, []).append(entry)
+        for pieces in by_heading.values():
+            ordered = sorted(pieces, key=lambda item: item.source.start_line)
+            for earlier, later in zip(ordered, ordered[1:], strict=False):
+                assert earlier.source.end_line < later.source.start_line, (
+                    f"{note.path} chunks overlap: {earlier.source} then {later.source}"
+                )
 
 
 def test_chunk_identity_survives_an_insertion_earlier_in_the_note(tmp_path: Path) -> None:
