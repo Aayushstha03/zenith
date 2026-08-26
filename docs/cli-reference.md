@@ -401,6 +401,48 @@ stem. Ambiguous titles or stems return exit code `2` rather than guessing.
 }
 ```
 
+### `ask QUESTION`
+
+```bash
+docker compose exec zenith zenith ask "what did I work on last week?"
+docker compose exec zenith zenith ask "..." --model qwen3.5-9b
+```
+
+Answers a question from the vault. The model reaches the notes only through
+the five tools in `zenith.agent`: search, whole-note read, context expansion,
+backlinks, and Kanban cards. It cannot write, and it cannot export the graph.
+
+`--model` overrides `ZENITH_LLM_MODEL` for one question, which is how to
+compare two loaded models without editing the environment.
+
+The command checks LM Studio before it builds the agent. An unreachable server,
+or one serving a different model, returns exit code `1` and says what to fix
+rather than failing part-way through a run.
+
+`tool_calls` lists what the model actually looked at, in order. An answer is
+only as good as the evidence behind it, so the trace is part of the result
+rather than a debugging extra. Pipe the answer alone with `jq -r .answer`.
+
+```json
+{
+  "answer": "You traced the pipeline flow on 2026-08-17 ...",
+  "model": "qwen3.5-9b",
+  "question": "what did I work on last week?",
+  "tool_calls": [
+    {"arguments": {"query": "pipeline", "limit": 5}, "tool": "search_notes"}
+  ],
+  "usage": {
+    "input_tokens": 2841,
+    "output_tokens": 173,
+    "requests": 3,
+    "tool_calls": 1
+  }
+}
+```
+
+A run that spins without answering stops at the usage limits and returns exit
+code `1`.
+
 ### `note read PATH_OR_TITLE`
 
 ```bash

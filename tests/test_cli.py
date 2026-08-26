@@ -23,6 +23,7 @@ def cli_settings(monkeypatch, tmp_path: Path) -> Settings:
         ["index", "init"],
         ["index", "rebuild"],
         ["search", "query", "--mode", "hybrid"],
+        ["ask", "what did I do last week?"],
         ["note", "get", "Note"],
         ["note", "read", "Note"],
         ["entry", "get", "entry-id"],
@@ -118,3 +119,82 @@ def test_note_read_command_emits_the_markdown_file(monkeypatch, cli_settings, ca
     payload = json.loads(capsys.readouterr().out)
     assert payload["content"] == "# News Resolution\n"
     assert list(payload) == sorted(payload)
+
+
+def test_ask_refuses_to_run_when_lm_studio_is_not_serving_the_model(
+    monkeypatch, cli_settings, capsys
+) -> None:
+    monkeypatch.setattr("zenith.runtime.cli.Zenith", lambda settings: object())
+    monkeypatch.setattr(
+        "zenith.runtime.cli.llm_health",
+        lambda settings: {"ready": False, "required": False, "error": "Connection refused"},
+    )
+
+    def must_not_build(*_: object, **__: object):  # pragma: no cover - must not run
+        raise AssertionError("the agent must not be built without a served model")
+
+    monkeypatch.setattr("zenith.agent.build_agent", must_not_build)
+    assert main(["ask", "what did I do?"]) == 1
+    error = json.loads(capsys.readouterr().err)
+    assert error["error"]["type"] == "LLMUnavailable"
+    assert "Serve on Local Network" in error["error"]["message"]
+    assert error["llm"]["ready"] is False
+
+
+def test_ask_reports_the_answer_with_the_evidence_it_looked_at(
+    monkeypatch, cli_settings, capsys
+) -> None:
+    from pydantic_ai import RunContext
+    from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    import zenith.agent.service as agent_service
+
+    deps = object()
+    reached: list[object] = []
+
+    def search_notes(ctx: RunContext[object], query: str) -> list[dict]:
+        """Search the notes vault.
+
+        Args:
+            query: What to look for.
+        """
+        reached.append(ctx.deps)
+        return [{"entry_id": "e1", "path": "projects/News Resolution.md"}]
+
+    def script(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("search_notes", {"query": "pipeline"})])
+        return ModelResponse(parts=[TextPart("You worked on the pipeline.")])
+
+    monkeypatch.setattr("zenith.runtime.cli.Zenith", lambda settings: deps)
+    monkeypatch.setattr("zenith.runtime.cli.llm_health", lambda settings: {"ready": True})
+    monkeypatch.setattr(agent_service, "TOOLS", [search_notes])
+    monkeypatch.setattr(agent_service, "build_model", lambda settings: FunctionModel(script))
+
+    assert main(["ask", "what did I do?", "--model", "qwen3.5-9b"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["answer"] == "You worked on the pipeline."
+    assert payload["model"] == "qwen3.5-9b"
+    assert payload["question"] == "what did I do?"
+    # The trace is part of the result: an answer is only as good as what it read.
+    assert payload["tool_calls"] == [
+        {"arguments": {"query": "pipeline"}, "tool": "search_notes"}
+    ]
+    assert payload["usage"]["requests"] == 2
+    assert payload["usage"]["tool_calls"] == 1
+    assert reached == [deps]
+    assert list(payload) == sorted(payload)
+
+
+def test_ask_leaves_the_agent_stack_unimported_for_other_commands(monkeypatch, cli_settings) -> None:
+    """Importing pydantic-ai costs over a second; only `ask` may pay it."""
+    import subprocess
+    import sys
+
+    probe = (
+        "import sys, zenith.runtime.cli;"
+        "sys.exit(1 if 'pydantic_ai' in sys.modules else 0)"
+    )
+    assert subprocess.run([sys.executable, "-c", probe]).returncode == 0

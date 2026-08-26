@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
@@ -20,7 +20,7 @@ from zenith.index.schema import initialize_index
 from zenith.library import Zenith
 from zenith.parser.service import VaultParser
 from zenith.parser.watcher import VaultWatcher
-from zenith.runtime.health import encode_report, health_report
+from zenith.runtime.health import encode_report, health_report, llm_health
 from zenith.runtime.models import prefetch, readiness
 
 
@@ -81,6 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("query", nargs="?", help="query text; omit for metadata mode")
     search.add_argument("--mode", choices=_values(RetrievalMode), default="hybrid")
     _add_entry_filters(search)
+
+    ask = commands.add_parser("ask", help="answer a question from the notes vault")
+    ask.add_argument("question")
+    ask.add_argument(
+        "--model", default=None, help="override ZENITH_LLM_MODEL for this question"
+    )
 
     note = commands.add_parser("note", help="retrieve notes")
     note_commands = note.add_subparsers(dest="note_command", required=True)
@@ -220,6 +226,8 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         return 0 if report.get("ready", True) else 1
 
     api = Zenith(settings)
+    if args.command == "ask":
+        return _ask(args, settings, api)
     if args.command == "search":
         mode = RetrievalMode(args.mode)
         texts = _query_texts(mode, args.query)
@@ -298,6 +306,73 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
     else:
         _print(api.export_graph().to_dict())
     return 0
+
+
+def _ask(args: argparse.Namespace, settings: Settings, api: Zenith) -> int:
+    # Imported here, not at module scope: pulling in the agent stack costs
+    # more than a second, and every other command would pay it for nothing.
+    from zenith.agent import DEFAULT_LIMITS, build_agent
+
+    if args.model:
+        settings = replace(settings, llm_model=args.model)
+    status = llm_health(settings)
+    if not status["ready"]:
+        _print(
+            {
+                "error": {
+                    "message": (
+                        f"LM Studio is not serving {settings.llm_model!r} at "
+                        f"{settings.llm_base_url}. Start LM Studio, load the model, "
+                        "and enable Serve on Local Network."
+                    ),
+                    "type": "LLMUnavailable",
+                },
+                "llm": status,
+            },
+            file=sys.stderr,
+        )
+        return 1
+
+    result = build_agent(settings).run_sync(
+        args.question, deps=api, usage_limits=DEFAULT_LIMITS
+    )
+    _print(
+        {
+            "answer": result.output,
+            "model": settings.llm_model,
+            "question": args.question,
+            "tool_calls": _tool_calls(result),
+            "usage": _usage(result),
+        }
+    )
+    return 0
+
+
+def _tool_calls(result: object) -> list[dict[str, object]]:
+    """List what the model actually looked at, in order.
+
+    A local model's answer is only as good as the evidence it retrieved, so
+    the trace is part of the result rather than a debugging extra.
+    """
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+
+    return [
+        {"arguments": part.args_as_dict(), "tool": part.tool_name}
+        for message in result.all_messages()
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    ]
+
+
+def _usage(result: object) -> dict[str, int | None]:
+    usage = result.usage
+    return {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "requests": usage.requests,
+        "tool_calls": usage.tool_calls,
+    }
 
 
 def _query_texts(mode: RetrievalMode, query: str | None) -> dict[str, str | None]:

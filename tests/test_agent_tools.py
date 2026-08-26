@@ -3,6 +3,7 @@
 from pathlib import Path
 import re
 import shutil
+import typing
 import warnings
 
 import pytest
@@ -75,6 +76,22 @@ def test_every_tool_declares_a_flat_described_schema() -> None:
                 assert spec.get("items", spec.get("anyOf", [{}])[0].get("items", {})).get(
                     "type"
                 ) == "string"
+
+
+def test_every_tool_takes_an_annotated_run_context() -> None:
+    """An unannotated `ctx` is silently treated as a model-supplied argument.
+
+    pydantic-ai decides by annotation, not by parameter name, so dropping the
+    annotation would hand the model a `ctx` argument to invent and would stop
+    the run's tool calls being counted against the usage limits.
+    """
+    import inspect
+
+    for function in tools.TOOLS:
+        first = next(iter(inspect.signature(function).parameters.values()))
+        annotation = inspect.get_annotations(function, eval_str=True)[first.name]
+        assert typing.get_origin(annotation) is RunContext
+        assert typing.get_args(annotation) == (Zenith,)
 
 
 def test_the_write_and_unbounded_operations_are_not_offered() -> None:
