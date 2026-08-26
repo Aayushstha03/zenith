@@ -2,23 +2,56 @@
   "logs/2026-08-20.md": {
     "note_type": "log",
     "note_date": "2026-08-20",
-    "sections": ["Work", "Thoughts", "Meals"],
-    "section_tags": {"Work": [], "Thoughts": ["journal"], "Meals": ["recipe"]}
+    "sections": [
+      "Work",
+      "Thoughts",
+      "Meals"
+    ],
+    "section_tags": {
+      "Work": [],
+      "Thoughts": [
+        "journal"
+      ],
+      "Meals": [
+        "recipe"
+      ]
+    }
   },
   "projects/News Resolution.md": {
     "note_type": "standard",
-    "updates": ["2026-08-19", "2026-08-17"]
+    "updates": [
+      "2026-08-19",
+      "2026-08-17"
+    ]
   },
   "messy/deep/random/Mixed Note.md": {
     "note_type": "standard",
-    "entry_types": ["freeform_section", "project_update"],
-    "dates": ["2026-08-18", "2026-08-20"]
+    "entry_types": [
+      "freeform_section",
+      "project_update"
+    ],
+    "dates": [
+      "2026-08-18",
+      "2026-08-20"
+    ]
   },
   "kanban/Kitchen App.md": {
     "note_type": "kanban",
-    "columns": ["ToDo", "Doing", "complete"],
-    "card_counts": [4, 1, 1],
-    "checked_counts": [0, 0, 1],
+    "columns": [
+      "ToDo",
+      "Doing",
+      "complete"
+    ],
+    "card_counts": [
+      4,
+      1,
+      1
+    ],
+    "checked_counts": [
+      0,
+      0,
+      1
+    ],
     "settings_searchable": false
   },
   "required_warnings": [
@@ -26,5 +59,22 @@
     "missing_link",
     "ambiguous_link",
     "invalid_kanban_settings"
-  ]
+  ],
+  "freeform/Oversized.md": {
+    "note_type": "standard",
+    "sections": [
+      "Migration Notes",
+      "Short Section"
+    ],
+    "oversized_section": "Migration Notes",
+    "chunked": true
+  },
+  "freeform/Headless Long.md": {
+    "note_type": "standard",
+    "sections": [],
+    "entry_types": [
+      "freeform_chunk"
+    ],
+    "chunked": true
+  }
 }

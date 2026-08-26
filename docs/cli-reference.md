@@ -489,6 +489,7 @@ Warning types:
 - `missing_link`
 - `invalid_kanban_settings`
 - `missing_kanban_marker`
+- `truncated_embedding_input`
 - `parser_failure`
 
 ```json

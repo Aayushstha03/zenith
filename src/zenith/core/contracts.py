@@ -34,6 +34,7 @@ class WarningType(StrEnum):
     MISSING_LINK = "missing_link"
     INVALID_KANBAN_SETTINGS = "invalid_kanban_settings"
     MISSING_KANBAN_MARKER = "missing_kanban_marker"
+    TRUNCATED_EMBEDDING_INPUT = "truncated_embedding_input"
     PARSER_FAILURE = "parser_failure"
 
 

@@ -11,7 +11,7 @@ from qdrant_client import models
 from zenith.core.config import Settings
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DENSE_VECTOR = "semantic"
 SPARSE_VECTOR = "text-bm25"
 

@@ -10,6 +10,9 @@ import os
 DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SPARSE_MODEL = "Qdrant/bm25"
 
+# Input positions the pinned dense model accepts before it truncates.
+DENSE_TOKEN_WINDOW = 128
+
 
 def _positive_int(name: str, default: int) -> int:
     raw = os.getenv(name, str(default))
@@ -51,6 +54,7 @@ class Settings:
     excluded_directories: tuple[str, ...] = (".git", ".obsidian", ".trash")
     known_tags: tuple[str, ...] = ("journal", "recipe", "work")
     tag_aliases: tuple[tuple[str, str], ...] = (("journaling", "journal"), ("recipes", "recipe"))
+    dense_token_window: int = DENSE_TOKEN_WINDOW
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -68,6 +72,7 @@ class Settings:
             excluded_directories=_csv("ZENITH_EXCLUDED_DIRECTORIES", ".git,.obsidian,.trash"),
             known_tags=_csv("ZENITH_KNOWN_TAGS", "journal,recipe,work"),
             tag_aliases=_aliases("ZENITH_TAG_ALIASES", "journaling:journal,recipes:recipe"),
+            dense_token_window=_positive_int("ZENITH_DENSE_TOKEN_WINDOW", DENSE_TOKEN_WINDOW),
         )
 
     def validate(self) -> tuple[str, ...]:
@@ -89,4 +94,6 @@ class Settings:
         known = {tag.casefold() for tag in self.known_tags}
         if any(canonical not in known for _, canonical in self.tag_aliases):
             errors.append("every tag alias must target a known canonical tag")
+        if self.dense_token_window < 32:
+            errors.append("ZENITH_DENSE_TOKEN_WINDOW must be at least 32")
         return tuple(errors)

@@ -17,11 +17,12 @@ from zenith.core.contracts import (
     WarningType,
 )
 from zenith.core.identity import entry_id, note_id
-from zenith.parser.chunking import paragraph_chunks
+from zenith.parser.chunking import Chunk, pack, paragraphs
 from zenith.parser.discovery import classify_path, discover_markdown
 from zenith.parser.kanban import parse_kanban_entries
 from zenith.parser.markdown import (
     Heading,
+    Prose,
     headings,
     markdown_tokens,
     note_title,
@@ -30,9 +31,10 @@ from zenith.parser.markdown import (
     meaningful_line_range,
     valid_iso_date,
 )
+from zenith.parser.tokens import content_budget, estimate_tokens
 
 
-PARSER_VERSION = "2.1.0"
+PARSER_VERSION = "3.0.0"
 
 
 class VaultParser:
@@ -129,6 +131,7 @@ class VaultParser:
         entries: list[ParsedEntry] = []
         warnings: list[IndexWarning] = []
         occurrences: defaultdict[tuple[str, ...], int] = defaultdict(int)
+        duplicates: defaultdict[str, int] = defaultdict(int)
         first_heading_zero = parsed_headings[0].line - 1 if parsed_headings else len(lines)
 
         loose_start = body_start
@@ -136,31 +139,25 @@ class VaultParser:
             first_nonempty = next((index for index in range(body_start, first_heading_zero) if lines[index].strip()), None)
             if first_nonempty is not None and valid_iso_date(lines[first_nonempty].strip()) == note_date:
                 loose_start = first_nonempty + 1
-        for chunk_index, chunk in enumerate(paragraph_chunks(lines, loose_start, first_heading_zero)):
-            prose = prose_between(
-                tokens, chunk.start_zero, chunk.end_zero, relative,
-                self.settings.known_tags, self.settings.tag_aliases,
-            )
-            if not prose.text:
-                continue
-            entry_type = EntryType.DAILY_SECTION if note_type is NoteType.LOG else EntryType.FREEFORM_CHUNK
+
+        preamble_type = EntryType.DAILY_SECTION if note_type is NoteType.LOG else EntryType.FREEFORM_CHUNK
+        for chunk, prose in self._chunks(
+            tokens=tokens, lines=lines, start_zero=loose_start, end_zero=first_heading_zero,
+            relative=relative, title=title, heading=None, note_type=note_type,
+            note_date=note_date, entry_date=None, warnings=warnings,
+        ):
+            body_range = meaningful_line_range(lines, chunk.start_zero, chunk.end_zero)
             entries.append(
                 self._entry(
-                    note_uuid, relative, title, note_type, entry_type, prose.text, None, (),
-                    SourceRange(chunk.start_zero + 1, chunk.end_zero), note_date, None, prose,
-                    f"preamble:{chunk_index}",
+                    note_uuid, relative, title, note_type, preamble_type, prose.text, None, (),
+                    body_range or SourceRange(chunk.start_zero + 1, chunk.end_zero),
+                    note_date, None, prose,
+                    _unique_key(f"preamble:{_digest(prose.text)}", duplicates),
                 )
             )
             warnings.extend(prose.warnings)
 
         for heading in parsed_headings:
-            prose = prose_between(
-                tokens, heading.content_start, heading.content_end, relative,
-                self.settings.known_tags, self.settings.tag_aliases,
-            )
-            if not prose.text:
-                continue
-            occurrences[heading.path] += 1
             if note_type is NoteType.LOG:
                 entry_type = EntryType.DAILY_SECTION
                 entry_date = None
@@ -170,18 +167,91 @@ class VaultParser:
             else:
                 entry_type = EntryType.FREEFORM_SECTION
                 entry_date = None
-            structural_key = f"{'/'.join(heading.path)}:{occurrences[heading.path]}"
-            body_range = meaningful_line_range(lines, heading.content_start, heading.content_end)
-            source_end = body_range.end_line if body_range else heading.line
-            entries.append(
-                self._entry(
-                    note_uuid, relative, title, note_type, entry_type, prose.text, heading.text,
-                    heading.path, SourceRange(heading.line, source_end),
-                    note_date, entry_date, prose, structural_key,
-                )
+
+            pieces = self._chunks(
+                tokens=tokens, lines=lines, start_zero=heading.content_start,
+                end_zero=heading.content_end, relative=relative, title=title,
+                heading=heading.text, note_type=note_type, note_date=note_date,
+                entry_date=entry_date, warnings=warnings,
             )
-            warnings.extend(prose.warnings)
+            if not pieces:
+                continue
+            occurrences[heading.path] += 1
+            section_key = f"{'/'.join(heading.path)}:{occurrences[heading.path]}"
+            for position, (chunk, prose) in enumerate(pieces):
+                body_range = meaningful_line_range(lines, chunk.start_zero, chunk.end_zero)
+                # The first piece is anchored to the heading so evidence and
+                # anchored links still point at the section they belong to.
+                if position == 0 or body_range is None:
+                    start_line = heading.line
+                else:
+                    start_line = body_range.start_line
+                end_line = body_range.end_line if body_range else heading.line
+                structural_key = (
+                    section_key
+                    if len(pieces) == 1
+                    else _unique_key(f"{section_key}:{_digest(prose.text)}", duplicates)
+                )
+                entries.append(
+                    self._entry(
+                        note_uuid, relative, title, note_type, entry_type, prose.text, heading.text,
+                        heading.path, SourceRange(start_line, end_line),
+                        note_date, entry_date, prose, structural_key,
+                    )
+                )
+                warnings.extend(prose.warnings)
         return tuple(entries), tuple(warnings)
+
+    def _chunks(
+        self,
+        *,
+        tokens: list,
+        lines: list[str],
+        start_zero: int,
+        end_zero: int,
+        relative: str,
+        title: str,
+        heading: str | None,
+        note_type: NoteType,
+        note_date: str | None,
+        entry_date: str | None,
+        warnings: list[IndexWarning],
+    ) -> list[tuple[Chunk, Prose]]:
+        """Split one line range into chunks that fit the dense token budget."""
+        blocks = paragraphs(lines, start_zero, end_zero)
+        if not blocks:
+            return []
+
+        def extract(start: int, end: int) -> Prose:
+            return prose_between(
+                tokens, start, end, relative, self.settings.known_tags, self.settings.tag_aliases
+            )
+
+        per_paragraph = [extract(block.start_zero, block.end_zero) for block in blocks]
+        # Every chunk's tags are a subset of the range's tags, so pricing the
+        # label prefix with all of them keeps the budget conservative.
+        all_tags = tuple(dict.fromkeys(tag for prose in per_paragraph for tag in prose.tags))
+        prefix = _embedding_text(note_type, title, heading, note_date, entry_date, all_tags, "")
+        budget = content_budget(prefix, self.settings.dense_token_window)
+
+        result: list[tuple[Chunk, Prose]] = []
+        for chunk in pack(blocks, [estimate_tokens(prose.text) for prose in per_paragraph], budget):
+            prose = extract(chunk.start_zero, chunk.end_zero)
+            if not prose.text:
+                continue
+            cost = estimate_tokens(prose.text)
+            if cost > budget:
+                warnings.append(
+                    IndexWarning(
+                        WarningType.TRUNCATED_EMBEDDING_INPUT,
+                        relative,
+                        f"one paragraph needs about {cost} tokens but only {budget} reach the "
+                        f"dense model; about {cost - budget} tokens are not semantically searchable",
+                        chunk.start_zero + 1,
+                    )
+                )
+            result.append((chunk, prose))
+        return result
 
     @staticmethod
     def _entry(
@@ -208,7 +278,7 @@ class VaultParser:
             note_type=note_type,
             entry_type=entry_type,
             text=text,
-            embedding_text=_embedding_text(note_type, entry_type, title, heading, note_date, entry_date, prose.tags, text),
+            embedding_text=_embedding_text(note_type, title, heading, note_date, entry_date, prose.tags, text),
             heading=heading,
             heading_path=heading_path,
             source=source,
@@ -219,6 +289,16 @@ class VaultParser:
             web_links=prose.web_links,
             content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         )
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _unique_key(key: str, duplicates: defaultdict[str, int]) -> str:
+    """Keep identical text in one note distinct without depending on position."""
+    duplicates[key] += 1
+    return f"{key}:{duplicates[key]}"
 
 
 def _dedupe_warnings(warnings: list[IndexWarning]) -> list[IndexWarning]:
@@ -234,7 +314,6 @@ def _dedupe_warnings(warnings: list[IndexWarning]) -> list[IndexWarning]:
 
 def _embedding_text(
     note_type: NoteType,
-    entry_type: EntryType,
     title: str,
     heading: str | None,
     note_date: str | None,

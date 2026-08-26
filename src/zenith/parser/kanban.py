@@ -20,6 +20,7 @@ from zenith.core.contracts import (
     WarningType,
 )
 from zenith.core.identity import entry_id
+from zenith.parser.tokens import estimate_tokens
 from zenith.parser.markdown import Frontmatter, Heading, meaningful_line_range, prose_between
 
 
@@ -130,5 +131,19 @@ def parse_kanban_entries(
                 )
             )
             warnings.extend(prose.warnings)
+            # A card is one atomic point, so it is never divided. When its text
+            # overruns the encoder the only honest signal is a warning.
+            cost = estimate_tokens(entries[-1].embedding_text)
+            if cost > settings.dense_token_window:
+                warnings.append(
+                    IndexWarning(
+                        WarningType.TRUNCATED_EMBEDDING_INPUT,
+                        path,
+                        f"Kanban card needs about {cost} tokens but only "
+                        f"{settings.dense_token_window} reach the dense model; a card is never "
+                        "divided, so the rest is not semantically searchable",
+                        line_index + 1,
+                    )
+                )
     metadata = {"kanban_settings": plugin_settings, "columns": [column.text for column in columns]}
     return tuple(entries), tuple(warnings), metadata

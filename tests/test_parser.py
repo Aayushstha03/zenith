@@ -63,13 +63,15 @@ def test_tags_and_links_come_only_from_eligible_prose() -> None:
     note = by_path(["freeform/Reference.md"])["freeform/Reference.md"]
     entry = note.entries[0]
     assert entry.tags == ("journal",)
-    assert [link.target_text for link in entry.outgoing_links] == [
+    links = [link for item in note.entries for link in item.outgoing_links]
+    assert [link.target_text for link in links] == [
         "News Resolution",
         "Does Not Exist",
         "Shared",
     ]
-    assert "Not a link" not in entry.text
-    assert "Still not a link" not in entry.text
+    text = "\n".join(item.text for item in note.entries)
+    assert "Not a link" not in text
+    assert "Still not a link" not in text
     assert "https://example.test/page#fragment" in entry.web_links
     assert [warning.kind for warning in note.warnings] == [WarningType.UNKNOWN_TAG]
 

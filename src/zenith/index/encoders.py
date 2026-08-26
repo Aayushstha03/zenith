@@ -39,6 +39,7 @@ class LocalEncoders:
             )
         self.dense = dense
         self.sparse = sparse
+        self.truncated_inputs = 0
 
     def encode(self, texts: Sequence[str]) -> list[dict[str, object]]:
         dense_vectors = self.encode_dense(texts)
@@ -49,6 +50,7 @@ class LocalEncoders:
         ]
 
     def encode_dense(self, texts: Sequence[str]) -> list[list[float]]:
+        self.truncated_inputs += self._count_truncated(texts)
         dense_vectors = list(self.dense.embed(list(texts)))
         if len(dense_vectors) != len(texts):
             raise RuntimeError("dense encoder returned a different number of vectors than inputs")
@@ -62,6 +64,35 @@ class LocalEncoders:
                 )
             result.append(dense_values)
         return result
+
+    def _count_truncated(self, texts: Sequence[str]) -> int:
+        """Count inputs the real tokenizer cuts, catching parser-estimate drift.
+
+        The parser budgets tokens with a hermetic approximation. This is the
+        only place the pinned tokenizer is authoritative, so a model upgrade
+        that narrows the window shows up here instead of silently degrading
+        recall.
+        """
+        tokenizer = self._tokenizer()
+        if tokenizer is None:
+            return 0
+        limit = (tokenizer.truncation or {}).get("max_length")
+        if not limit:
+            return 0
+        truncated = 0
+        for text in texts:
+            encoded = tokenizer.encode(text, add_special_tokens=True)
+            # A padded encoding reports the padded length, so trust the mask.
+            length = sum(encoded.attention_mask) if encoded.attention_mask else len(encoded.ids)
+            if length >= limit:
+                truncated += 1
+        return truncated
+
+    def _tokenizer(self) -> Any | None:
+        try:
+            return self.dense.model.tokenizer
+        except AttributeError:
+            return None
 
     def encode_sparse(self, texts: Sequence[str]) -> list[models.SparseVector]:
         sparse_vectors = list(self.sparse.embed(list(texts)))

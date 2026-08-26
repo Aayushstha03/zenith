@@ -19,6 +19,8 @@ def test_fixture_manifest_and_markdown_shapes_exist() -> None:
     assert kanban.count("- [x]") == 1
     assert "**Complete**" in kanban
     assert "kanban:settings" in kanban
+    assert manifest["freeform/Oversized.md"]["oversized_section"] == "Migration Notes"
+    assert manifest["freeform/Headless Long.md"]["entry_types"] == ["freeform_chunk"]
 
 
 def test_fixture_inventory_covers_phase_one_contract() -> None:
@@ -33,5 +35,7 @@ def test_fixture_inventory_covers_phase_one_contract() -> None:
         "{invalid json}",
         "Checked but still active",
         "Unchecked but in complete status",
+        "saffron measurement",
+        "Cardamom is the unique closing term",
     ):
         assert shape in all_text

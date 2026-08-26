@@ -39,3 +39,54 @@ short or common query word) it narrows nothing and behavior matches today.
 
 **Decision:** Deferred. Revisit during Phase 9 real-vault validation, when
 actual scan cost on a real vault can be measured instead of guessed.
+
+## 2026-08-26 — The token estimate over-counts ordinary prose by about two times
+
+**Where:** `src/zenith/parser/tokens.py`, `estimate_tokens`.
+
+**What:** The parser cannot load the real tokenizer without making chunk
+boundaries, and therefore entry identifiers, depend on whether a model has been
+downloaded. It approximates instead. The divisors were fitted against the
+pinned tokenizer over the fixture vault plus English, Spanish, Russian,
+Japanese, and Korean samples, and chosen as the loosest values that never
+under-count any of them. The result over-counts ordinary English prose by
+roughly two times, so a section can split into two entries when one would have
+fit.
+
+**Why this is fine for now:** Splitting early costs extra points and extra
+embedding time. It loses no content. The alternative failure, under-counting,
+silently drops text from the dense vector, which is the defect this work
+existed to remove. Erring toward more chunks is the correct direction.
+
+**Where it gets real:** A large real vault. Extra points mean more storage,
+longer rebuilds, and more fragmented evidence spans in cited answers.
+
+**The fix, when it's worth doing:** Measure the true ratio on the real vault
+using `LocalEncoders.truncated_inputs` and the real tokenizer, then either
+raise `ZENITH_DENSE_TOKEN_WINDOW` by the measured headroom or replace the
+approximation with a small vocabulary-derived table shipped alongside the
+pinned model. A shipped table stays hermetic because it versions with the
+model.
+
+**Decision:** Deferred. Revisit during Phase 9 real-vault validation, when the
+ratio can be measured on real notes instead of a calibration corpus.
+
+## 2026-08-26 — Deliberately adversarial text can still overrun the window
+
+**Where:** `src/zenith/parser/tokens.py` and `src/zenith/index/encoders.py`.
+
+**What:** Long random identifiers, base64 blobs, and hashes fragment into
+roughly one token per two characters, faster than the estimate assumes. Such an
+entry can still exceed the encoder window.
+
+**Why this is fine for now:** It is no longer silent. `VaultParser` warns from
+its own estimate when a single paragraph exceeds the budget, and
+`LocalEncoders.truncated_inputs` counts what the real tokenizer actually cut, so
+drift between the approximation and the model is observable rather than
+invisible.
+
+**The fix, when it's worth doing:** Surface `truncated_inputs` in the rebuild
+report and in `zenith diagnose`, so an operator sees the count without reading
+warnings note by note.
+
+**Decision:** Deferred until the counter has real-vault numbers behind it.

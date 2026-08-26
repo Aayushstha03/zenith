@@ -52,6 +52,25 @@ context, or nearby history. Graph export is deliberately unbounded and emits
 deterministically ordered note nodes plus internal-link, shared-tag, and exact
 shared-date edges.
 
+## Entry size and the encoder window
+
+The pinned dense model accepts 128 input tokens and truncates the rest without
+reporting it. Zenith therefore splits any section, preamble, or headless note
+whose content would overrun that window into several entries, cutting only on
+paragraph boundaries. Each piece keeps the heading, heading path, entry type,
+and entry date of the section it came from, so chronology and evidence stay
+intact.
+
+The parser budgets tokens with a calibrated, dependency-free estimate so that
+parsing stays hermetic and entry identifiers never depend on whether a model is
+present. The estimate deliberately over-counts ordinary prose, which means a
+section can split slightly earlier than strictly necessary.
+
+Two cases cannot be divided: a single paragraph larger than the window, and a
+Kanban card, which is one atomic point. Both emit a
+`truncated_embedding_input` warning instead of losing text silently. Set
+`ZENITH_DENSE_TOKEN_WINDOW` to match a different dense model.
+
 ## Library and CLI
 
 Phase 7 exposes the index as one composable `Zenith` library object and a

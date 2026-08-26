@@ -16,7 +16,8 @@ def settings(vault: Path) -> Settings:
 def test_fixture_links_resolve_missing_and_ambiguous_deterministically() -> None:
     notes = resolve_links(VaultParser(settings(FIXTURE_VAULT)).parse_vault())
     reference = next(note for note in notes if note.path == "freeform/Reference.md")
-    links = reference.entries[0].outgoing_links
+    # The section spans several chunks, so collect links across all of them.
+    links = [link for entry in reference.entries for link in entry.outgoing_links]
 
     assert [link.resolution for link in links] == [
         LinkResolution.RESOLVED,

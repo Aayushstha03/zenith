@@ -1,7 +1,8 @@
-"""Paragraph-aware chunking for loose and headingless Markdown."""
+"""Paragraph-aware chunking bounded by the embedding token budget."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -11,8 +12,9 @@ class Chunk:
     end_zero: int
 
 
-def paragraph_chunks(lines: list[str], start_zero: int, end_zero: int, max_chars: int = 1200) -> tuple[Chunk, ...]:
-    paragraphs: list[Chunk] = []
+def paragraphs(lines: list[str], start_zero: int, end_zero: int) -> tuple[Chunk, ...]:
+    """Split a line range on blank lines. Paragraphs are never divided."""
+    result: list[Chunk] = []
     cursor = start_zero
     while cursor < end_zero:
         while cursor < end_zero and not lines[cursor].strip():
@@ -22,22 +24,31 @@ def paragraph_chunks(lines: list[str], start_zero: int, end_zero: int, max_chars
         paragraph_start = cursor
         while cursor < end_zero and lines[cursor].strip():
             cursor += 1
-        paragraphs.append(Chunk(paragraph_start, cursor))
+        result.append(Chunk(paragraph_start, cursor))
+    return tuple(result)
 
+
+def pack(blocks: Sequence[Chunk], costs: Sequence[int], budget: int) -> tuple[Chunk, ...]:
+    """Greedily merge adjacent paragraphs while they fit the token budget.
+
+    A paragraph whose own cost exceeds the budget still becomes one chunk.
+    Splitting it would cut a sentence in half, so the caller warns instead.
+    """
+    if len(blocks) != len(costs):
+        raise ValueError("blocks and costs must be the same length")
     chunks: list[Chunk] = []
-    current_start: int | None = None
-    current_end = 0
-    current_size = 0
-    for paragraph in paragraphs:
-        size = sum(len(line) + 1 for line in lines[paragraph.start_zero : paragraph.end_zero])
-        if current_start is not None and current_size + size > max_chars:
-            chunks.append(Chunk(current_start, current_end))
-            current_start = None
-            current_size = 0
-        if current_start is None:
-            current_start = paragraph.start_zero
-        current_end = paragraph.end_zero
-        current_size += size
-    if current_start is not None:
-        chunks.append(Chunk(current_start, current_end))
+    start: int | None = None
+    end = 0
+    accumulated = 0
+    for block, cost in zip(blocks, costs, strict=True):
+        if start is not None and accumulated + cost > budget:
+            chunks.append(Chunk(start, end))
+            start = None
+            accumulated = 0
+        if start is None:
+            start = block.start_zero
+        end = block.end_zero
+        accumulated += cost
+    if start is not None:
+        chunks.append(Chunk(start, end))
     return tuple(chunks)

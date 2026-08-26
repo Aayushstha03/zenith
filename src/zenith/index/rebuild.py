@@ -21,7 +21,7 @@ from zenith.parser.service import PARSER_VERSION, VaultParser
 
 ENCODER_VERSION = "fastembed-0.7.3"
 TOKENIZER_VERSION = "bm25-english-stemming-stopwords-v1"
-EMBEDDING_INPUT_VERSION = "1"
+EMBEDDING_INPUT_VERSION = "2"
 
 
 @dataclass(frozen=True, slots=True)
