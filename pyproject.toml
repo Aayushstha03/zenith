@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastembed==0.7.3",
     "markdown-it-py==4.0.0",
+    "pydantic-ai-slim[openai]==2.35.0",
     "pyyaml==6.0.3",
     "qdrant-client==1.15.1",
     "watchdog==6.0.0",

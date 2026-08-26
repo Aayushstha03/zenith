@@ -1,0 +1,139 @@
+"""The tool surface the answering model is given over the notes vault.
+
+Deliberately narrow. Every tool takes flat arguments, returns a compact
+projection, and reports a failure the model can act on rather than raising.
+The library keeps the wider surface; `reindex` writes and `export_graph` is
+unbounded, so neither is offered here.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic_ai import ModelRetry, RunContext
+
+from zenith.agent import projections
+from zenith.library import Zenith
+
+
+def search_notes(
+    ctx: RunContext[Zenith],
+    query: str,
+    exact: bool = False,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    tags: list[str] | None = None,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Search the notes vault and return the entries that match.
+
+    Args:
+        query: What to look for. Plain language works; so does a phrase.
+        exact: Return only entries containing the query as a literal phrase.
+            Use this when the question depends on the exact wording. Results
+            then carry `exact_match_verified`.
+        date_from: Earliest date to include, written as YYYY-MM-DD.
+        date_to: Latest date to include, written as YYYY-MM-DD.
+        tags: Return only entries that carry all of these tags.
+        limit: How many entries to return, at most 20.
+    """
+    with _repair():
+        results = ctx.deps.find_entries(
+            exact_text=query if exact else None,
+            lexical_text=None if exact else query,
+            semantic_text=None if exact else query,
+            date_from=date_from,
+            date_to=date_to,
+            tags_all=tuple(tags or ()),
+            limit=max(1, min(limit, 20)),
+        )
+    return projections.entries(results)
+
+
+def read_note(ctx: RunContext[Zenith], name: str) -> dict[str, Any]:
+    """Read one complete note as Markdown.
+
+    Search returns fragments of a note. Read the whole note when the question
+    is about the note itself, or when a fragment is not enough to answer it.
+
+    Args:
+        name: The note's title, or its path inside the vault. A search result's
+            `note` or `path` value works.
+    """
+    with _repair():
+        return projections.note(ctx.deps.read_note(name))
+
+
+def expand_context(ctx: RunContext[Zenith], entry_id: str) -> dict[str, Any]:
+    """Find what surrounds one entry: linked notes, backlinks, nearby days.
+
+    Each returned item is labelled with how it relates to the entry, so an
+    answer can separate direct evidence from context that was reached through
+    a link or from history that merely happened nearby in time.
+
+    Args:
+        entry_id: The `entry_id` of an entry returned by another tool.
+    """
+    with _repair():
+        return projections.context(ctx.deps.expand_context(entry_id))
+
+
+def find_backlinks(ctx: RunContext[Zenith], name: str) -> list[dict[str, Any]]:
+    """Find the entries in other notes that link to this note.
+
+    Use this to learn where a note is referred to, and in what terms.
+
+    Args:
+        name: The note's title, or its path inside the vault.
+    """
+    with _repair():
+        note = ctx.deps.get_note(name)
+        return projections.entries(ctx.deps.get_backlinks(note.note_id))
+
+
+def find_tasks(
+    ctx: RunContext[Zenith],
+    board: str | None = None,
+    columns: list[str] | None = None,
+    checked: bool | None = None,
+    query: str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Find task cards on the Kanban boards in the vault.
+
+    Args:
+        board: Restrict to one board by name or path. Omit to search them all.
+        columns: Restrict to these columns, for example ToDo or Doing.
+        checked: True for completed cards, False for open cards, omit for both.
+        query: Words the card must contain.
+        limit: How many cards to return, at most 50.
+    """
+    with _repair():
+        results = ctx.deps.find_kanban_cards(
+            board=board,
+            columns=tuple(columns or ()),
+            checked=checked,
+            semantic_text=query,
+            limit=max(1, min(limit, 50)),
+        )
+    return projections.entries(results)
+
+
+TOOLS = [search_notes, read_note, expand_context, find_backlinks, find_tasks]
+
+
+class _repair:
+    """Turn a library error into an instruction the model can act on.
+
+    The library already says what went wrong and, for an ambiguous name, which
+    notes it could have meant. `ModelRetry` hands that text back to the model
+    so it can correct the call instead of the run failing.
+    """
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, kind: type[BaseException] | None, error: BaseException | None, _: object) -> bool:
+        if isinstance(error, (LookupError, ValueError)):
+            raise ModelRetry(str(error)) from error
+        return False
