@@ -11,7 +11,10 @@ DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SPARSE_MODEL = "Qdrant/bm25"
 
 # Input positions the pinned dense model accepts before it truncates.
-DENSE_TOKEN_WINDOW = 128
+# FastEmbed defaults all-MiniLM-L6-v2 to 128, but the model's own
+# sentence_bert_config.json declares 256, which is what it was fine-tuned
+# for. `LocalEncoders` pins the real tokenizer to this value.
+DENSE_TOKEN_WINDOW = 256
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -96,4 +99,9 @@ class Settings:
             errors.append("every tag alias must target a known canonical tag")
         if self.dense_token_window < 32:
             errors.append("ZENITH_DENSE_TOKEN_WINDOW must be at least 32")
+        if self.dense_token_window > 512:
+            errors.append(
+                "ZENITH_DENSE_TOKEN_WINDOW must not exceed 512, the positional limit "
+                "of the supported dense models"
+            )
         return tuple(errors)

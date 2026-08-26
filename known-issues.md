@@ -71,6 +71,13 @@ model.
 **Decision:** Deferred. Revisit during Phase 9 real-vault validation, when the
 ratio can be measured on real notes instead of a calibration corpus.
 
+**Update 2026-08-26:** Partly mitigated. The window moved from FastEmbed's 128
+default to the 256 the model declares, so the effective budget roughly doubled
+even with the same over-count. Fixture entries dropped from 48 points to 45,
+and `freeform/Reference.md` went back to a single entry instead of being split
+in two. The ratio itself is unchanged and still worth measuring on a real
+vault.
+
 ## 2026-08-26 — Deliberately adversarial text can still overrun the window
 
 **Where:** `src/zenith/parser/tokens.py` and `src/zenith/index/encoders.py`.

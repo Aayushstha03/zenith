@@ -71,25 +71,27 @@ def test_chunk_line_ranges_stay_inside_the_note_and_never_overlap(tmp_path: Path
 
 
 def test_chunk_identity_survives_an_insertion_earlier_in_the_note(tmp_path: Path) -> None:
-    # Paragraphs wide enough that each fills its own chunk, which is the shape
-    # an oversized note actually has.
+    # Size each paragraph from the real budget so exactly one fills a chunk,
+    # which is the shape an oversized note actually has. Deriving it keeps the
+    # test honest if the token window ever changes.
+    budget = content_budget("Note: Loose\nContent: ")
+
     def paragraph(index: int) -> str:
-        return (
-            f"Paragraph {index} discusses deterministic identifiers, incremental "
-            "reindexing, stale point removal, alias switching, and the reuse of "
-            "embeddings whose input did not change between two runs of the indexer."
-        )
+        words = ["reindexing", "identifiers", "embeddings", "alias", "switching", "removal"]
+        body = " ".join(words * (budget // len(words)))
+        return f"Paragraph {index} discusses {body}."
 
     body = "\n\n".join(paragraph(index) for index in range(5))
     note_path = tmp_path / "Loose.md"
     note_path.write_text(body + "\n")
     before = {entry.text: entry.entry_id for entry in parse(tmp_path)["Loose.md"].entries}
+    assert len(before) >= 4, "each paragraph should fill its own chunk"
 
-    note_path.write_text("A brand new opening paragraph added at the very top.\n\n" + body + "\n")
+    note_path.write_text(paragraph(99) + "\n\n" + body + "\n")
     after = {entry.text: entry.entry_id for entry in parse(tmp_path)["Loose.md"].entries}
 
     shared = set(before) & set(after)
-    assert len(shared) >= 3, "unchanged paragraphs should keep their chunk"
+    assert len(shared) >= 4, "unchanged paragraphs should keep their chunk"
     # A positional key would renumber every chunk after the insertion and force
     # a re-encode of text that did not change.
     assert all(before[text] == after[text] for text in shared)
@@ -139,3 +141,33 @@ def test_an_oversized_kanban_card_warns_and_stays_one_point(tmp_path: Path) -> N
 def test_a_normal_kanban_card_does_not_warn() -> None:
     note = parse(FIXTURE_VAULT)["kanban/Kitchen App.md"]
     assert not [w for w in note.warnings if w.kind is WarningType.TRUNCATED_EMBEDDING_INPUT]
+
+
+def test_the_encoder_window_matches_what_the_parser_budgets_against() -> None:
+    """The parser's budget and the encoder's real limit must never diverge.
+
+    FastEmbed defaults this model to 128 positions while the model itself
+    declares 256. If `LocalEncoders` did not pin the tokenizer, raising
+    `ZENITH_DENSE_TOKEN_WINDOW` would widen the parser's chunks while the
+    encoder kept cutting at its own default, silently losing the difference.
+    """
+    from fastembed import TextEmbedding
+
+    from zenith.index.encoders import LocalEncoders
+
+    configured = Settings(
+        "http://unused", FIXTURE_VAULT, FIXTURE_VAULT / "models", "entries", "127.0.0.1", 8080,
+        dense_token_window=192,
+    )
+    encoders = LocalEncoders(
+        configured, dense=TextEmbedding(model_name=configured.dense_model), sparse=object()
+    )
+    assert encoders._tokenizer().truncation["max_length"] == 192
+
+
+def test_a_stub_encoder_without_a_tokenizer_is_left_alone() -> None:
+    from zenith.index.encoders import LocalEncoders
+
+    encoders = LocalEncoders(settings(FIXTURE_VAULT), dense=object(), sparse=object())
+    assert encoders._tokenizer() is None
+    assert encoders.truncated_inputs == 0

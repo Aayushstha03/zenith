@@ -89,11 +89,9 @@
     "entry_types": [
       "freeform_section",
       "freeform_section",
-      "freeform_section",
       "freeform_section"
     ],
     "dates": [
-      null,
       null,
       null,
       null
@@ -103,11 +101,9 @@
     "note_type": "standard",
     "entry_types": [
       "freeform_chunk",
-      "freeform_chunk",
       "freeform_chunk"
     ],
     "dates": [
-      null,
       null,
       null
     ]

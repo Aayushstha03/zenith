@@ -36,9 +36,11 @@ _DIGIT_CHARS_PER_TOKEN = 2
 # to very short pieces. Korean syllable blocks are the worst observed case.
 _NON_ASCII_TOKENS_PER_CHAR = 3
 
-# The pinned dense model. FastEmbed configures this tokenizer with
-# `max_length: 128`, even though its own model description claims 256.
-DEFAULT_TOKEN_WINDOW = 128
+# The pinned dense model's own declared `max_seq_length`. FastEmbed ships a
+# 128 default for it, which is half what the model was fine-tuned for, so
+# `LocalEncoders` raises the real tokenizer to whatever this is set to.
+# Never exceed 512: past that the positional embeddings are untrained.
+DEFAULT_TOKEN_WINDOW = 256
 
 # `[CLS]` and `[SEP]` occupy two positions in every encoded sequence.
 SPECIAL_TOKENS = 2

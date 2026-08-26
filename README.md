@@ -54,12 +54,19 @@ shared-date edges.
 
 ## Entry size and the encoder window
 
-The pinned dense model accepts 128 input tokens and truncates the rest without
+The pinned dense model accepts 256 input tokens and truncates the rest without
 reporting it. Zenith therefore splits any section, preamble, or headless note
 whose content would overrun that window into several entries, cutting only on
 paragraph boundaries. Each piece keeps the heading, heading path, entry type,
 and entry date of the section it came from, so chronology and evidence stay
 intact.
+
+The window is 256 because that is the `max_seq_length` all-MiniLM-L6-v2
+declares for itself. FastEmbed would otherwise run it at 128, which is half the
+length the model was fine-tuned for. `LocalEncoders` pins the real tokenizer to
+`ZENITH_DENSE_TOKEN_WINDOW`, so the parser's budget and the encoder's actual
+limit can never drift apart. Do not set it above 512; past that the positional
+embeddings are untrained.
 
 The parser budgets tokens with a calibrated, dependency-free estimate so that
 parsing stays hermetic and entry identifiers never depend on whether a model is

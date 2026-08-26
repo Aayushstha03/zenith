@@ -39,7 +39,9 @@ class LocalEncoders:
             )
         self.dense = dense
         self.sparse = sparse
+        self.token_window = settings.dense_token_window
         self.truncated_inputs = 0
+        self._pin_token_window()
 
     def encode(self, texts: Sequence[str]) -> list[dict[str, object]]:
         dense_vectors = self.encode_dense(texts)
@@ -64,6 +66,19 @@ class LocalEncoders:
                 )
             result.append(dense_values)
         return result
+
+    def _pin_token_window(self) -> None:
+        """Hold the real tokenizer to the window the parser budgets against.
+
+        FastEmbed defaults all-MiniLM-L6-v2 to 128 positions even though the
+        model declares 256. Without this the parser would split entries for one
+        window while the encoder silently cut them at another, which is the
+        exact failure the token budget exists to prevent.
+        """
+        tokenizer = self._tokenizer()
+        if tokenizer is None:
+            return
+        tokenizer.enable_truncation(max_length=self.token_window)
 
     def _count_truncated(self, texts: Sequence[str]) -> int:
         """Count inputs the real tokenizer cuts, catching parser-estimate drift.

@@ -68,7 +68,7 @@ def test_rebuild_validates_points_then_atomically_switches_alias() -> None:
     payload = client.points[0].payload
     assert payload["schema_version"] == 5
     assert payload["parser_version"] == "3.1.0"
-    assert payload["embedding_input_version"] == "2"
+    assert payload["embedding_input_version"] == "3"
     assert payload["start_line"] >= 1
 
 

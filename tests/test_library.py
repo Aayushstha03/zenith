@@ -116,6 +116,6 @@ def test_library_context_graph_and_reindex_surface(tmp_path: Path) -> None:
         warnings.simplefilter("ignore", UserWarning)
         rebuilt = api.reindex(full=True)
     assert rebuilt.notes == 18
-    assert rebuilt.points == 48
+    assert rebuilt.points == 45
     with pytest.raises(ValueError, match="does not accept paths"):
         api.reindex(["Note.md"], full=True)
