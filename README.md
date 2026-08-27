@@ -122,6 +122,7 @@ Representative CLI commands:
 docker compose exec zenith zenith index init
 docker compose exec zenith zenith search "fried chicken" --mode literal
 docker compose exec zenith zenith note get "News Resolution"
+docker compose exec zenith zenith note read "News Resolution"
 docker compose exec zenith zenith links backlinks NOTE_ID
 docker compose exec zenith zenith context ENTRY_ID
 docker compose exec zenith zenith warnings --type missing_link
@@ -136,6 +137,33 @@ ambiguous identifiers return a JSON error on stderr with a nonzero exit code.
 After model prefetch, the application health endpoint is available inside the
 Compose network and the Qdrant dashboard is available at
 <http://localhost:6333/dashboard>.
+
+## Asking questions
+
+`zenith ask` answers a question from the vault:
+
+```bash
+docker compose exec zenith zenith ask "what did I work on last week?"
+```
+
+The model reaches the notes only through five tools: search, whole-note read,
+context expansion, backlinks, and Kanban cards. It cannot write to the vault
+and it cannot export the graph. The result carries the answer, the trace of
+what the model actually looked at, and token usage, so an answer can be
+checked against its evidence.
+
+The answering model is served by LM Studio on the host over its
+OpenAI-compatible API, and is configured through `ZENITH_LLM_BASE_URL`,
+`ZENITH_LLM_MODEL`, and `ZENITH_LLM_API_KEY`. Enable "Serve on Local Network"
+in LM Studio so the container can reach it.
+
+LM Studio is optional. Parsing, indexing, and the watcher all run with it
+closed, so the index never competes with a chat model for VRAM. `zenith health`
+reports LM Studio but never fails because of it, and the container liveness
+probe does not contact it at all.
+
+`zenith ask` refuses to answer when the index is not ready, rather than
+searching an unready index and reporting that the notes say nothing.
 
 Deployment settings are documented in `.env`. To use a real vault, set
 `ZENITH_VAULT_PATH` there to an absolute host path. The Compose mount remains

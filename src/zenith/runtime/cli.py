@@ -315,6 +315,27 @@ def _ask(args: argparse.Namespace, settings: Settings, api: Zenith) -> int:
 
     if args.model:
         settings = replace(settings, llm_model=args.model)
+
+    # Check the index before the model. A model that searches an unready index
+    # finds nothing and reports, confidently, that the notes say nothing. That
+    # failure is worse than refusing, because it looks like an answer.
+    report = health_report(settings)
+    if not report["ready"]:
+        _print(
+            {
+                "error": {
+                    "message": (
+                        "the vault index is not ready to answer questions; "
+                        "run `zenith diagnose` for the failing dependency"
+                    ),
+                    "type": "IndexUnavailable",
+                },
+                "health": report,
+            },
+            file=sys.stderr,
+        )
+        return 1
+
     status = llm_health(settings)
     if not status["ready"]:
         _print(

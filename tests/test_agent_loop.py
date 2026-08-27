@@ -266,3 +266,8 @@ def test_the_agent_is_built_against_lm_studio_by_default(settings) -> None:
     profile = agent.model.profile
     assert profile["openai_supports_strict_tool_definition"] is False
     assert profile["openai_supports_tool_choice_required"] is False
+    # A hosted API's timeout and retry defaults are wrong for a local model:
+    # 600 seconds retried twice reads to a person as a hung command.
+    client = agent.model.client
+    assert client.timeout == settings.llm_timeout
+    assert client.max_retries == 0

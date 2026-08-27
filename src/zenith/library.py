@@ -305,9 +305,11 @@ class Zenith:
     def _parsed_notes(self) -> tuple[ParsedNote, ...]:
         """Return the parsed vault, reparsing only when a Markdown file changed.
 
-        Every call fingerprints the vault, which costs one stat per note. That
-        is far cheaper than reparsing, and it notices edits made by the watcher
-        or by any other process, not only edits made through `reindex`.
+        Every call fingerprints the vault: one `rglob` walk, and roughly three
+        stat calls per note between `discover_markdown` and this function. That
+        is still far cheaper than reading, tokenizing, and chunking every file,
+        and it notices edits made by the watcher or by any other process, not
+        only edits made through `reindex`.
         """
         fingerprint = self._vault_fingerprint()
         if self._notes is None or self._fingerprint != fingerprint:

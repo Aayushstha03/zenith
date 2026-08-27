@@ -47,6 +47,7 @@ services:
       ZENITH_LLM_BASE_URL: ${ZENITH_LLM_BASE_URL}
       ZENITH_LLM_MODEL: ${ZENITH_LLM_MODEL}
       ZENITH_LLM_API_KEY: ${ZENITH_LLM_API_KEY}
+      ZENITH_LLM_TIMEOUT: ${ZENITH_LLM_TIMEOUT}
     volumes:
       - type: bind
         source: ${ZENITH_VAULT_PATH}

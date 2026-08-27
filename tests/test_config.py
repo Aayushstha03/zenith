@@ -77,6 +77,12 @@ def test_llm_settings_default_to_lm_studio_on_the_host(monkeypatch: pytest.Monke
     assert settings.llm_model == "qwen3.5-9b"
     assert settings.validate() == ()
 
+    assert settings.llm_timeout == 120.0
+    monkeypatch.setenv("ZENITH_LLM_TIMEOUT", "0")
+    with pytest.raises(ValueError, match="positive"):
+        Settings.from_env()
+    monkeypatch.delenv("ZENITH_LLM_TIMEOUT")
+
     monkeypatch.setenv("ZENITH_LLM_BASE_URL", "http://127.0.0.1:1234/v1/")
     assert Settings.from_env().llm_base_url == "http://127.0.0.1:1234/v1"
 
@@ -89,3 +95,23 @@ def test_llm_settings_reject_a_non_http_base_url(tmp_path: Path) -> None:
     errors = settings.validate()
     assert "ZENITH_LLM_BASE_URL must use http or https" in errors
     assert "ZENITH_LLM_MODEL cannot be empty" in errors
+
+
+def test_an_empty_environment_value_means_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Compose substitutes an empty string for a key an older `.env` lacks.
+
+    Refusing it would stop `zenith serve`, and with it the `health` command an
+    operator would run to find out why the container restarts.
+    """
+    monkeypatch.setenv("ZENITH_LLM_TIMEOUT", "")
+    monkeypatch.setenv("ZENITH_DENSE_TOKEN_WINDOW", "")
+    monkeypatch.setenv("ZENITH_PORT", "")
+    settings = Settings.from_env()
+    assert settings.llm_timeout == 120.0
+    assert settings.dense_token_window == 256
+    assert settings.port == 8080
+
+    # A value that is present and wrong is still rejected.
+    monkeypatch.setenv("ZENITH_LLM_TIMEOUT", "not-a-number")
+    with pytest.raises(ValueError, match="must be a number"):
+        Settings.from_env()

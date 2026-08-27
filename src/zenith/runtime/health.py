@@ -43,8 +43,16 @@ def llm_health(settings: Settings, timeout: float = 1.0) -> dict[str, Any]:
             served = json.load(response)
     except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
         return {**report, "ready": False, "error": str(exc)}
+    # An OpenAI-compatible server is not obliged to return the shape OpenAI
+    # returns. A bare array, or an array of strings, must read as not ready
+    # rather than raise out of the report this block is only one part of.
+    listed = served.get("data") if isinstance(served, dict) else None
+    if not isinstance(listed, list):
+        listed = []
     available = sorted(
-        str(item.get("id", "")) for item in served.get("data", []) if item.get("id")
+        str(item["id"])
+        for item in listed
+        if isinstance(item, dict) and item.get("id")
     )
     return {
         **report,

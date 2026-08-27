@@ -121,10 +121,31 @@ def test_note_read_command_emits_the_markdown_file(monkeypatch, cli_settings, ca
     assert list(payload) == sorted(payload)
 
 
+def test_ask_refuses_to_answer_from_an_unready_index(
+    monkeypatch, cli_settings, capsys
+) -> None:
+    """Silence from an unready index reads exactly like an honest empty answer."""
+    monkeypatch.setattr("zenith.runtime.cli.Zenith", lambda settings: object())
+    monkeypatch.setattr(
+        "zenith.runtime.cli.health_report",
+        lambda settings: {"ready": False, "index": {"ready": False}},
+    )
+
+    def must_not_reach(settings):  # pragma: no cover - must not run
+        raise AssertionError("LM Studio must not be contacted for an unready index")
+
+    monkeypatch.setattr("zenith.runtime.cli.llm_health", must_not_reach)
+    assert main(["ask", "what did I do?"]) == 1
+    error = json.loads(capsys.readouterr().err)
+    assert error["error"]["type"] == "IndexUnavailable"
+    assert error["health"]["index"]["ready"] is False
+
+
 def test_ask_refuses_to_run_when_lm_studio_is_not_serving_the_model(
     monkeypatch, cli_settings, capsys
 ) -> None:
     monkeypatch.setattr("zenith.runtime.cli.Zenith", lambda settings: object())
+    monkeypatch.setattr("zenith.runtime.cli.health_report", lambda settings: {"ready": True})
     monkeypatch.setattr(
         "zenith.runtime.cli.llm_health",
         lambda settings: {"ready": False, "required": False, "error": "Connection refused"},
@@ -168,6 +189,7 @@ def test_ask_reports_the_answer_with_the_evidence_it_looked_at(
         return ModelResponse(parts=[TextPart("You worked on the pipeline.")])
 
     monkeypatch.setattr("zenith.runtime.cli.Zenith", lambda settings: deps)
+    monkeypatch.setattr("zenith.runtime.cli.health_report", lambda settings: {"ready": True})
     monkeypatch.setattr("zenith.runtime.cli.llm_health", lambda settings: {"ready": True})
     monkeypatch.setattr(agent_service, "TOOLS", [search_notes])
     monkeypatch.setattr(agent_service, "build_model", lambda settings: FunctionModel(script))

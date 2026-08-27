@@ -47,7 +47,7 @@ def search_notes(
             tags_all=tuple(tags or ()),
             limit=max(1, min(limit, 20)),
         )
-    return projections.entries(results)
+    return projections.entries(results, match=query if exact else None)
 
 
 def read_note(ctx: RunContext[Zenith], name: str) -> dict[str, Any]:
@@ -103,20 +103,47 @@ def find_tasks(
 
     Args:
         board: Restrict to one board by name or path. Omit to search them all.
-        columns: Restrict to these columns, for example ToDo or Doing.
+        columns: Restrict to these columns, for example ToDo or Doing. An
+            unknown column name is rejected, and the reply names the real ones.
         checked: True for completed cards, False for open cards, omit for both.
-        query: Words the card must contain.
+        query: Words to search for by meaning. This finds related cards; it
+            does not prove any card contains these words.
         limit: How many cards to return, at most 50.
     """
     with _repair():
         results = ctx.deps.find_kanban_cards(
             board=board,
-            columns=tuple(columns or ()),
+            columns=_columns(ctx, board, columns),
             checked=checked,
             semantic_text=query,
             limit=max(1, min(limit, 50)),
         )
     return projections.entries(results)
+
+
+def _columns(
+    ctx: RunContext[Zenith], board: str | None, requested: list[str] | None
+) -> tuple[str, ...]:
+    """Resolve column names against the boards, and reject the ones that miss.
+
+    Columns reach Qdrant as a case-sensitive match, so "To Do" against a stored
+    "ToDo" silently returns nothing. The model would then report that a board
+    has no such cards. A bad board name already fails loudly; a bad column name
+    must too, and the failure names the columns that exist.
+    """
+    if not requested:
+        return ()
+    boards = (
+        (ctx.deps.get_kanban_board(board),) if board else ctx.deps.list_kanban_boards()
+    )
+    known = {column.casefold(): column for item in boards for column in item.columns}
+    unknown = [name for name in requested if name.casefold() not in known]
+    if unknown:
+        raise ValueError(
+            f"unknown Kanban column {', '.join(repr(name) for name in unknown)}; "
+            f"this board has {', '.join(sorted(known.values()))}"
+        )
+    return tuple(known[name.casefold()] for name in requested)
 
 
 TOOLS = [search_notes, read_note, expand_context, find_backlinks, find_tasks]

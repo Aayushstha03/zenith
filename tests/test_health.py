@@ -132,3 +132,30 @@ def test_llm_health_reports_a_refused_connection_as_not_ready(monkeypatch, tmp_p
     assert report["ready"] is False
     assert report["required"] is False
     assert "Connection refused" in report["error"]
+
+
+def test_llm_health_reports_a_malformed_model_listing_as_not_ready(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An OpenAI-compatible server need not return the shape OpenAI returns.
+
+    Raising here would lose the Qdrant, index, model, and vault report that
+    `zenith health` was actually run for.
+    """
+    import io
+
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+    for body in ('[{"id": "m"}]', '{"data": ["m"]}', "not json", '{"data": null}'):
+        monkeypatch.setattr(
+            "zenith.runtime.health.urlopen",
+            lambda url, timeout=1.0, payload=body: Response(payload.encode()),
+        )
+        report = llm_health(_ready_settings(tmp_path))
+        assert report["ready"] is False
+        assert report["required"] is False

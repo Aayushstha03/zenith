@@ -415,9 +415,15 @@ backlinks, and Kanban cards. It cannot write, and it cannot export the graph.
 `--model` overrides `ZENITH_LLM_MODEL` for one question, which is how to
 compare two loaded models without editing the environment.
 
-The command checks LM Studio before it builds the agent. An unreachable server,
-or one serving a different model, returns exit code `1` and says what to fix
-rather than failing part-way through a run.
+The command checks the index first, then LM Studio, before it builds the agent.
+An unready index returns exit code `1` rather than letting the model search it,
+find nothing, and report that the notes say nothing. An unreachable LM Studio,
+or one serving a different model, also returns exit code `1` and says what to
+fix rather than failing part-way through a run.
+
+One answer waits `ZENITH_LLM_TIMEOUT` seconds, 120 by default. The OpenAI
+client would otherwise wait 600 seconds and retry twice, which reads as a hung
+command.
 
 `tool_calls` lists what the model actually looked at, in order. An answer is
 only as good as the evidence behind it, so the trace is part of the result

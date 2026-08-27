@@ -43,10 +43,28 @@ def test_documented_env_contains_all_compose_settings() -> None:
         "ZENITH_LLM_BASE_URL",
         "ZENITH_LLM_MODEL",
         "ZENITH_LLM_API_KEY",
+        "ZENITH_LLM_TIMEOUT",
     }
     for name in required:
         assert f"{name}=" in env
         assert f"{name}=" in example
+
+
+def test_the_image_installs_every_declared_dependency() -> None:
+    """The Dockerfile repeats the dependency list, so it can drift from it.
+
+    The runtime stage installs the project with `--no-deps`, which means a
+    dependency added to pyproject.toml and not added here is simply absent
+    from the image, and only fails when the code path that needs it runs.
+    """
+    import re
+    import tomllib
+
+    declared = set(tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"])
+    pinned = set(
+        re.findall(r"^\s+\"?([A-Za-z0-9_.\[\]-]+==[0-9][^\s\\\"]*)", (ROOT / "Dockerfile").read_text(), re.M)
+    )
+    assert declared == pinned, f"Dockerfile and pyproject disagree: {declared ^ pinned}"
 
 
 def test_runtime_has_no_sqlite_or_cloud_inference_dependency() -> None:

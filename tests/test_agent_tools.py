@@ -14,7 +14,7 @@ from pydantic_ai.usage import RunUsage
 from qdrant_client import QdrantClient, models
 
 from zenith.agent import tools
-from zenith.agent.projections import MAX_NOTE_CHARS
+from zenith.agent.projections import MAX_ENTRY_CHARS, MAX_NOTE_CHARS
 from zenith.core.config import Settings
 from zenith.index.rebuild import IndexRebuilder
 from zenith.library import Zenith
@@ -180,3 +180,50 @@ def test_a_bad_name_becomes_an_instruction_the_model_can_act_on(
 def test_limits_are_clamped_rather_than_trusted(ctx: RunContext[Zenith]) -> None:
     assert len(tools.search_notes(ctx, "the", limit=999)) <= 20
     assert tools.search_notes(ctx, "the", limit=0)
+
+
+def test_a_clipped_entry_only_claims_a_verified_match_it_can_show() -> None:
+    """`pack` emits an oversized single paragraph rather than cut a sentence.
+
+    Such an entry gets clipped here, so a head-clip can drop the very phrase
+    the match was verified against and still assert it was proven.
+    """
+    from zenith.agent import projections
+    from zenith.core.contracts import EntryType, NoteType, RetrievalMode, SearchResult
+
+    phrase = "fried chicken"
+    text = "a" * 3000 + f" {phrase} " + "b" * 3000
+    result = SearchResult(
+        "e", "n", "p.md", "N", NoteType.STANDARD, EntryType.FREEFORM_SECTION,
+        RetrievalMode.LITERAL, text, text, None, (), 1, 9, None, None, (), (),
+        verified=True,
+    )
+
+    windowed = projections.entry(result, match=phrase)
+    assert windowed["text_truncated"] is True
+    assert phrase in windowed["text"]
+    assert windowed["exact_match_verified"] is True
+    assert len(windowed["text"]) <= MAX_ENTRY_CHARS + 64
+
+    # Without the phrase to centre on, the clip cannot show the proof, so the
+    # claim of proof is withheld rather than made on unseen text.
+    blind = projections.entry(result)
+    assert blind["text_truncated"] is True
+    assert phrase not in blind["text"]
+    assert "exact_match_verified" not in blind
+
+
+def test_an_unknown_kanban_column_names_the_real_ones(ctx: RunContext[Zenith]) -> None:
+    """A case-sensitive miss would otherwise read as an empty board."""
+    with pytest.raises(ModelRetry, match="unknown Kanban column") as unknown:
+        tools.find_tasks(ctx, board="Kitchen App", columns=["To Do"])
+    assert "ToDo" in str(unknown.value)
+
+    # A different case is a near miss, not a mistake, so it is resolved.
+    assert tools.find_tasks(ctx, board="Kitchen App", columns=["todo"])
+
+
+def test_find_tasks_never_claims_a_card_contains_the_query(ctx: RunContext[Zenith]) -> None:
+    cards = tools.find_tasks(ctx, board="Kitchen App", query="recipe", limit=3)
+    assert cards
+    assert all("exact_match_verified" not in card for card in cards)

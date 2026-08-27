@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from openai import AsyncOpenAI
+
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.profiles.openai import OpenAIModelProfile
@@ -37,6 +39,9 @@ Respect what the notes actually establish:
   other.
 - When you expand context, keep the `evidence` labels. Say whether something is
   direct evidence, something a link led to, or nearby history.
+- A result carrying `text_truncated` or `content_truncated` is a fragment, not
+  the whole thing. Never conclude that a note does not mention something from a
+  fragment of it. Read the note, or search again with narrower words.
 
 Say plainly when the notes do not answer the question. That is a useful answer.
 Guessing is not.
@@ -53,12 +58,22 @@ def build_model(settings: Settings) -> OpenAIChatModel:
     LM Studio is OpenAI-compatible rather than OpenAI. Strict tool definitions
     and `tool_choice='required'` are both off, because a compatible server is
     not obliged to support either.
+
+    The client is built here rather than left to the provider so the request
+    timeout and the retry count are ours. Both defaults belong to a hosted API
+    and are wrong for a local model on the far side of a desktop application.
     """
     return OpenAIChatModel(
         settings.llm_model,
         provider=OpenAIProvider(
-            base_url=settings.llm_base_url,
-            api_key=settings.llm_api_key,
+            openai_client=AsyncOpenAI(
+                base_url=settings.llm_base_url,
+                api_key=settings.llm_api_key,
+                timeout=settings.llm_timeout,
+                # The client retries a timeout twice by default, so a stalled
+                # model would cost three times the timeout before reporting it.
+                max_retries=0,
+            )
         ),
         profile=OpenAIModelProfile(
             openai_supports_strict_tool_definition=False,

@@ -16,15 +16,21 @@ from zenith.core.contracts import (
 )
 
 
-# One entry is already bounded by the dense token window, so this cap only
-# catches notes that overrun it. A whole note has no such bound.
+# Most entries fit the dense token window, but `pack` deliberately emits a
+# single paragraph larger than the budget rather than cutting a sentence in
+# half, so an entry can still overrun this. A whole note has no bound at all.
 MAX_ENTRY_CHARS = 1200
 MAX_NOTE_CHARS = 12000
 
 
-def entry(result: SearchResult) -> dict[str, Any]:
-    """Project one search result down to what an answer needs to cite it."""
-    text, truncated = _clip(result.text, MAX_ENTRY_CHARS)
+def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
+    """Project one search result down to what an answer needs to cite it.
+
+    `match` is the literal phrase a caller verified. Clipping is centred on it,
+    so an entry too large to send whole still carries the evidence for its own
+    verification instead of an unrelated opening paragraph.
+    """
+    text, truncated = _clip(result.text, MAX_ENTRY_CHARS, match=match)
     date, date_kind = _date(result)
     projected: dict[str, Any] = {
         "entry_id": result.entry_id,
@@ -40,8 +46,12 @@ def entry(result: SearchResult) -> dict[str, Any]:
     if truncated:
         projected["text_truncated"] = True
     # Only literal retrieval verifies an exact phrase. Similarity never does,
-    # and must never be reported as if it had.
-    if result.verified is not None:
+    # and must never be reported as if it had. Neither may a clipped body that
+    # no longer contains the phrase: the model would be told the wording is
+    # proven while holding text that does not show it.
+    if result.verified is not None and (
+        not result.verified or not truncated or _contains(text, match)
+    ):
         projected["exact_match_verified"] = result.verified
     if result.kanban is not None:
         projected["task"] = {
@@ -53,8 +63,10 @@ def entry(result: SearchResult) -> dict[str, Any]:
     return projected
 
 
-def entries(results: tuple[SearchResult, ...]) -> list[dict[str, Any]]:
-    return [entry(result) for result in results]
+def entries(
+    results: tuple[SearchResult, ...], *, match: str | None = None
+) -> list[dict[str, Any]]:
+    return [entry(result, match=match) for result in results]
 
 
 def note(content: NoteContent) -> dict[str, Any]:
@@ -106,7 +118,19 @@ def _date(result: SearchResult) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _clip(text: str, limit: int) -> tuple[str, bool]:
+def _contains(text: str, match: str | None) -> bool:
+    return bool(match) and match.casefold() in text.casefold()
+
+
+def _clip(text: str, limit: int, *, match: str | None = None) -> tuple[str, bool]:
     if len(text) <= limit:
         return text, False
-    return text[:limit].rstrip() + "\n[... truncated]", True
+    start = 0
+    if match:
+        found = text.casefold().find(match.casefold())
+        if found >= 0:
+            # Centre the window on the phrase, then pull it back inside the text.
+            start = max(0, min(found - (limit - len(match)) // 2, len(text) - limit))
+    clipped = text[start : start + limit].strip()
+    prefix = "[... truncated]\n" if start else ""
+    return f"{prefix}{clipped}\n[... truncated]", True

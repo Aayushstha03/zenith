@@ -23,14 +23,32 @@ DENSE_TOKEN_WINDOW = 256
 LLM_BASE_URL = "http://host.docker.internal:1234/v1"
 LLM_MODEL = "qwen3.5-9b"
 LLM_API_KEY = "lm-studio"
+# Seconds to wait for one answer. The OpenAI client defaults to a 600 second
+# read timeout, which turns a stalled local model into a CLI that appears to
+# hang. A local model that has not answered in two minutes is stuck.
+LLM_TIMEOUT = 120.0
 
 
 def _positive_int(name: str, default: int) -> int:
-    raw = os.getenv(name, str(default))
+    # Compose substitutes an empty string for a variable an older `.env` does
+    # not define. That means unset, not invalid: refusing it would stop every
+    # command, including `zenith serve` and the `health` that would explain it.
+    raw = os.getenv(name) or str(default)
     try:
         value = int(raw)
     except ValueError as exc:
         raise ValueError(f"{name} must be an integer, got {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive, got {value}")
+    return value
+
+
+def _positive_float(name: str, default: float) -> float:
+    raw = os.getenv(name) or str(default)
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number, got {raw!r}") from exc
     if value <= 0:
         raise ValueError(f"{name} must be positive, got {value}")
     return value
@@ -69,6 +87,7 @@ class Settings:
     llm_base_url: str = LLM_BASE_URL
     llm_model: str = LLM_MODEL
     llm_api_key: str = LLM_API_KEY
+    llm_timeout: float = LLM_TIMEOUT
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -90,6 +109,7 @@ class Settings:
             llm_base_url=os.getenv("ZENITH_LLM_BASE_URL", LLM_BASE_URL).rstrip("/"),
             llm_model=os.getenv("ZENITH_LLM_MODEL", LLM_MODEL).strip(),
             llm_api_key=os.getenv("ZENITH_LLM_API_KEY", LLM_API_KEY),
+            llm_timeout=_positive_float("ZENITH_LLM_TIMEOUT", LLM_TIMEOUT),
         )
 
     def validate(self) -> tuple[str, ...]:
