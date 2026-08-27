@@ -271,3 +271,25 @@ def test_the_agent_is_built_against_lm_studio_by_default(settings) -> None:
     client = agent.model.client
     assert client.timeout == settings.llm_timeout
     assert client.max_retries == 0
+
+
+def test_the_configured_temperature_reaches_the_request(settings, vault_api) -> None:
+    """Temperature is a request parameter, not model state.
+
+    LM Studio holds its own preset, and the value sent here overrides it, so
+    the setting is only real if it arrives with the request.
+    """
+    from dataclasses import replace
+
+    captured: list[object] = []
+
+    def capture(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        captured.append((info.model_settings or {}).get("temperature"))
+        return ModelResponse(parts=[TextPart("done")])
+
+    build_agent(settings, model=FunctionModel(capture)).run_sync("hi", deps=vault_api)
+    assert captured[0] == 0.0
+
+    warm = replace(settings, llm_temperature=0.7)
+    build_agent(warm, model=FunctionModel(capture)).run_sync("hi", deps=vault_api)
+    assert captured[1] == 0.7

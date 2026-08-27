@@ -44,6 +44,7 @@ def test_documented_env_contains_all_compose_settings() -> None:
         "ZENITH_LLM_MODEL",
         "ZENITH_LLM_API_KEY",
         "ZENITH_LLM_TIMEOUT",
+        "ZENITH_LLM_TEMPERATURE",
     }
     for name in required:
         assert f"{name}=" in env

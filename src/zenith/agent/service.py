@@ -89,8 +89,12 @@ def build_agent(settings: Settings, *, model: Any | None = None) -> Agent[Zenith
         deps_type=Zenith,
         tools=TOOLS,
         instructions=INSTRUCTIONS,
-        # Temperature zero: the same question over unchanged notes should not
-        # produce a different answer each time.
-        model_settings=ModelSettings(temperature=0.0),
+        # Sent on every request, so it decides the sampling rather than any
+        # preset the LM Studio server happens to hold. Zero by default, to keep
+        # the answer as close to reproducible as the server allows. It is not a
+        # guarantee: a mixture-of-experts model served by LM Studio still varies
+        # between runs on a byte-identical prompt, measured at roughly one run
+        # in three. Treat a repeated answer as likely, never as promised.
+        model_settings=ModelSettings(temperature=settings.llm_temperature),
         retries=2,
     )

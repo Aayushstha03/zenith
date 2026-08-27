@@ -154,8 +154,13 @@ checked against its evidence.
 
 The answering model is served by LM Studio on the host over its
 OpenAI-compatible API, and is configured through `ZENITH_LLM_BASE_URL`,
-`ZENITH_LLM_MODEL`, and `ZENITH_LLM_API_KEY`. Enable "Serve on Local Network"
-in LM Studio so the container can reach it.
+`ZENITH_LLM_MODEL`, `ZENITH_LLM_API_KEY`, `ZENITH_LLM_TIMEOUT`, and
+`ZENITH_LLM_TEMPERATURE`. Enable "Serve on Local Network" in LM Studio so the
+container can reach it, and start its server: LM Studio does not start it with
+the application unless "Start server on launch" is on.
+
+The temperature is 0.0 by default, and is sent on every request, so a preset
+held by the LM Studio server does not apply to `zenith ask`.
 
 LM Studio is optional. Parsing, indexing, and the watcher all run with it
 closed, so the index never competes with a chat model for VRAM. `zenith health`

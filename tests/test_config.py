@@ -83,6 +83,18 @@ def test_llm_settings_default_to_lm_studio_on_the_host(monkeypatch: pytest.Monke
         Settings.from_env()
     monkeypatch.delenv("ZENITH_LLM_TIMEOUT")
 
+    assert settings.llm_temperature == 0.0
+    monkeypatch.setenv("ZENITH_LLM_TEMPERATURE", "0.7")
+    assert Settings.from_env().llm_temperature == 0.7
+    # Zero is the useful default, not a mistake, so the bound is a range.
+    monkeypatch.setenv("ZENITH_LLM_TEMPERATURE", "0")
+    assert Settings.from_env().llm_temperature == 0.0
+    for rejected in ("-0.1", "2.1"):
+        monkeypatch.setenv("ZENITH_LLM_TEMPERATURE", rejected)
+        with pytest.raises(ValueError, match="between 0.0 and 2.0"):
+            Settings.from_env()
+    monkeypatch.delenv("ZENITH_LLM_TEMPERATURE")
+
     monkeypatch.setenv("ZENITH_LLM_BASE_URL", "http://127.0.0.1:1234/v1/")
     assert Settings.from_env().llm_base_url == "http://127.0.0.1:1234/v1"
 
@@ -104,10 +116,12 @@ def test_an_empty_environment_value_means_unset(monkeypatch: pytest.MonkeyPatch)
     operator would run to find out why the container restarts.
     """
     monkeypatch.setenv("ZENITH_LLM_TIMEOUT", "")
+    monkeypatch.setenv("ZENITH_LLM_TEMPERATURE", "")
     monkeypatch.setenv("ZENITH_DENSE_TOKEN_WINDOW", "")
     monkeypatch.setenv("ZENITH_PORT", "")
     settings = Settings.from_env()
     assert settings.llm_timeout == 120.0
+    assert settings.llm_temperature == 0.0
     assert settings.dense_token_window == 256
     assert settings.port == 8080
 

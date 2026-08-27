@@ -27,6 +27,13 @@ LLM_API_KEY = "lm-studio"
 # read timeout, which turns a stalled local model into a CLI that appears to
 # hang. A local model that has not answered in two minutes is stuck.
 LLM_TIMEOUT = 120.0
+# Sampling temperature for one answer. Zero by default: the same question over
+# unchanged notes should not produce a different answer each time. The value is
+# sent on every request, so it overrides any preset the LM Studio server holds.
+LLM_TEMPERATURE = 0.0
+# The OpenAI-compatible range. Above roughly one, a small model stops obeying
+# the citation and grounding rules the instructions depend on.
+LLM_TEMPERATURE_MAX = 2.0
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -51,6 +58,22 @@ def _positive_float(name: str, default: float) -> float:
         raise ValueError(f"{name} must be a number, got {raw!r}") from exc
     if value <= 0:
         raise ValueError(f"{name} must be positive, got {value}")
+    return value
+
+
+def _bounded_float(name: str, default: float, low: float, high: float) -> float:
+    """Read a float that is allowed to sit at zero, unlike `_positive_float`.
+
+    A temperature of zero is the useful default rather than a mistake, so the
+    bound is a range and not a sign.
+    """
+    raw = os.getenv(name) or str(default)
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number, got {raw!r}") from exc
+    if not low <= value <= high:
+        raise ValueError(f"{name} must be between {low} and {high}, got {value}")
     return value
 
 
@@ -88,6 +111,7 @@ class Settings:
     llm_model: str = LLM_MODEL
     llm_api_key: str = LLM_API_KEY
     llm_timeout: float = LLM_TIMEOUT
+    llm_temperature: float = LLM_TEMPERATURE
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -110,6 +134,9 @@ class Settings:
             llm_model=os.getenv("ZENITH_LLM_MODEL", LLM_MODEL).strip(),
             llm_api_key=os.getenv("ZENITH_LLM_API_KEY", LLM_API_KEY),
             llm_timeout=_positive_float("ZENITH_LLM_TIMEOUT", LLM_TIMEOUT),
+            llm_temperature=_bounded_float(
+                "ZENITH_LLM_TEMPERATURE", LLM_TEMPERATURE, 0.0, LLM_TEMPERATURE_MAX
+            ),
         )
 
     def validate(self) -> tuple[str, ...]:

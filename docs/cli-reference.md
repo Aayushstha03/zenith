@@ -425,6 +425,17 @@ One answer waits `ZENITH_LLM_TIMEOUT` seconds, 120 by default. The OpenAI
 client would otherwise wait 600 seconds and retry twice, which reads as a hung
 command.
 
+`ZENITH_LLM_TEMPERATURE` sets the sampling temperature, 0.0 to 2.0, and 0.0 by
+default. The value goes out with every request, so it decides the sampling
+rather than any preset held by the LM Studio server. Raising it loosens the
+citation and grounding rules the instructions depend on, so raise it only to
+compare answers, never to make them better.
+
+Temperature 0.0 makes an answer repeatable, not deterministic. A
+mixture-of-experts model served by LM Studio was measured giving two different
+answers over six runs of one question, on a byte-identical prompt. Do not build
+anything on two runs agreeing.
+
 `tool_calls` lists what the model actually looked at, in order. An answer is
 only as good as the evidence behind it, so the trace is part of the result
 rather than a debugging extra. Pipe the answer alone with `jq -r .answer`.
