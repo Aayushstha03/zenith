@@ -8,12 +8,16 @@ unbounded, so neither is offered here.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
 from zenith.agent import projections
 from zenith.library import Zenith
+
+
+_ENTRY_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
 def search_notes(
@@ -60,6 +64,14 @@ def read_note(ctx: RunContext[Zenith], name: str) -> dict[str, Any]:
         name: The note's title, or its path inside the vault. A search result's
             `note` or `path` value works.
     """
+    # An `entry_id` reaches here often enough to be worth naming: it is the one
+    # identifier every result carries, and the library would only answer "note
+    # not found", which does not say what to send instead.
+    if _ENTRY_ID.fullmatch(name.strip()):
+        raise ModelRetry(
+            f"{name!r} is an entry_id, not a note name. Pass the `note` or "
+            "`path` value from the same result instead."
+        )
     with _repair():
         return projections.note(ctx.deps.read_note(name))
 

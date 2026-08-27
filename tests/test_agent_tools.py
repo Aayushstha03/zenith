@@ -307,3 +307,20 @@ def test_a_library_bug_is_not_disguised_as_a_model_mistake() -> None:
     with pytest.raises(TypeError):
         with tools._repair():
             raise TypeError("the library is broken")
+
+
+def test_an_entry_id_sent_to_read_note_says_what_to_send_instead(
+    ctx: RunContext[Zenith],
+) -> None:
+    """The model reaches for the one identifier every result carries.
+
+    The library would answer only "note not found", which does not tell it
+    which field to use, so it costs a retry and sometimes a wrong note.
+    """
+    entry_id = tools.search_notes(ctx, "pipeline", limit=1)[0]["entry_id"]
+    with pytest.raises(ModelRetry, match="is an entry_id, not a note name") as wrong:
+        tools.read_note(ctx, entry_id)
+    assert "`note`" in str(wrong.value) and "`path`" in str(wrong.value)
+
+    # A real name is untouched by the guard.
+    assert tools.read_note(ctx, "News Resolution")["note"] == "News Resolution"

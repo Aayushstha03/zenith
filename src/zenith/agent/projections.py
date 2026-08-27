@@ -32,16 +32,20 @@ def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
     """
     text, truncated = _clip(result.text, MAX_ENTRY_CHARS, match=match)
     date, date_kind = _date(result)
+    # Citation fields lead. A model reads a result in key order and cites the
+    # first identifier it meets, so `entry_id` sitting first got printed as the
+    # citation. It is an argument for `expand_context`, not something to show a
+    # reader, so it goes last.
     projected: dict[str, Any] = {
-        "entry_id": result.entry_id,
         "note": result.note_title,
-        "path": result.path,
         "heading": result.heading,
         "lines": f"{result.start_line}-{result.end_line}",
+        "path": result.path,
         "date": date,
         "date_kind": date_kind,
         "tags": list(result.tags),
         "text": text,
+        "entry_id": result.entry_id,
     }
     if truncated:
         projected["text_truncated"] = True

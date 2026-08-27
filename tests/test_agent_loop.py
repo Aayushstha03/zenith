@@ -254,7 +254,13 @@ def test_the_instructions_state_the_citation_and_dating_rules(settings, vault_ap
     build_agent(settings, model=FunctionModel(capture)).run_sync("hi", deps=vault_api)
 
     instructions = captured[0]
-    assert "line range" in instructions
+    # The rule alone produced no citations from a small model. The literal
+    # template and the worked example are what it actually follows, so both
+    # are part of the contract now, not prose that may be reworded away.
+    assert "[Note Title, Heading, lines N-M]" in instructions
+    assert "lines 6-9]" in instructions
+    # entry_id is an argument for expand_context, never a citation to print.
+    assert "Never print an `entry_id`" in instructions
     assert "undated" in instructions
     assert "exact_match_verified" in instructions
 
