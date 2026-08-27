@@ -74,7 +74,7 @@ def test_llm_settings_default_to_lm_studio_on_the_host(monkeypatch: pytest.Monke
     monkeypatch.delenv("ZENITH_LLM_MODEL", raising=False)
     settings = Settings.from_env()
     assert settings.llm_base_url == "http://host.docker.internal:1234/v1"
-    assert settings.llm_model == "qwen3.5-9b"
+    assert settings.llm_model == "lfm2.5-8b-a1b"
     assert settings.validate() == ()
 
     assert settings.llm_timeout == 120.0

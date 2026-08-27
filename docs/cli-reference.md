@@ -146,9 +146,9 @@ budget waiting for one.
 {
   "configuration": {"errors": [], "ready": true},
   "llm": {
-    "available_models": ["qwen3.5-9b"],
+    "available_models": ["lfm2.5-8b-a1b"],
     "base_url": "http://host.docker.internal:1234/v1",
-    "model": "qwen3.5-9b",
+    "model": "lfm2.5-8b-a1b",
     "ready": true,
     "required": false
   },
@@ -405,7 +405,7 @@ stem. Ambiguous titles or stems return exit code `2` rather than guessing.
 
 ```bash
 docker compose exec zenith zenith ask "what did I work on last week?"
-docker compose exec zenith zenith ask "..." --model qwen3.5-9b
+docker compose exec zenith zenith ask "..." --model google/gemma-4-e4b
 ```
 
 Answers a question from the vault. The model reaches the notes only through
@@ -432,7 +432,7 @@ rather than a debugging extra. Pipe the answer alone with `jq -r .answer`.
 ```json
 {
   "answer": "You traced the pipeline flow on 2026-08-17 ...",
-  "model": "qwen3.5-9b",
+  "model": "lfm2.5-8b-a1b",
   "question": "what did I work on last week?",
   "tool_calls": [
     {"arguments": {"query": "pipeline", "limit": 5}, "tool": "search_notes"}

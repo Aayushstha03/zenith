@@ -21,7 +21,7 @@ DENSE_TOKEN_WINDOW = 256
 # with LM Studio closed so the index never competes for VRAM. LM Studio ignores
 # the API key, but the OpenAI client requires a non-empty one.
 LLM_BASE_URL = "http://host.docker.internal:1234/v1"
-LLM_MODEL = "qwen3.5-9b"
+LLM_MODEL = "lfm2.5-8b-a1b"
 LLM_API_KEY = "lm-studio"
 # Seconds to wait for one answer. The OpenAI client defaults to a 600 second
 # read timeout, which turns a stalled local model into a CLI that appears to

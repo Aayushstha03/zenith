@@ -102,7 +102,9 @@ def test_llm_health_is_ready_only_when_the_configured_model_is_served(
     import io
 
     settings = _ready_settings(tmp_path)
-    served = {"data": [{"id": "qwen3.5-9b"}, {"id": "bge-m3"}]}
+    # Derived from the settings, not written out: the configured model changes
+    # when a different one is loaded, and this test is about the comparison.
+    served = {"data": [{"id": settings.llm_model}, {"id": "bge-m3"}]}
 
     class Response(io.BytesIO):
         def __enter__(self):
@@ -117,7 +119,7 @@ def test_llm_health_is_ready_only_when_the_configured_model_is_served(
     )
     report = llm_health(settings)
     assert report["ready"] is True
-    assert report["available_models"] == ["bge-m3", "qwen3.5-9b"]
+    assert report["available_models"] == sorted(["bge-m3", settings.llm_model])
 
     missing = llm_health(replace(settings, llm_model="not-loaded"))
     assert missing["ready"] is False
