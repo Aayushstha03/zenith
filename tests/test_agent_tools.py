@@ -227,3 +227,83 @@ def test_find_tasks_never_claims_a_card_contains_the_query(ctx: RunContext[Zenit
     cards = tools.find_tasks(ctx, board="Kitchen App", query="recipe", limit=3)
     assert cards
     assert all("exact_match_verified" not in card for card in cards)
+
+
+def test_search_narrows_by_tag_and_by_date(ctx: RunContext[Zenith]) -> None:
+    """The filters are how a question about a period, or a topic, stays honest.
+
+    A model that cannot narrow searches the whole vault and answers from
+    whatever ranked highest, which is not the same as what the question asked.
+    """
+    tagged = tools.search_notes(ctx, "tag", tags=["journal"], limit=5)
+    assert tagged
+    assert all("journal" in result["tags"] for result in tagged)
+
+    dated = tools.search_notes(
+        ctx, "pipeline", date_from="2026-08-19", date_to="2026-08-19", limit=10
+    )
+    assert dated
+    assert all(result["date"] == "2026-08-19" for result in dated)
+
+
+def test_expand_context_reports_the_links_it_could_not_resolve(
+    ctx: RunContext[Zenith],
+) -> None:
+    """A link that leads nowhere is evidence too.
+
+    Dropping it silently would leave the model to read the remaining items as
+    the whole of what the entry points at, and answer as if nothing were
+    missing.
+    """
+    entry_id = tools.search_notes(ctx, "Missing", exact=True, limit=5)[0]["entry_id"]
+    unresolved = tools.expand_context(ctx, entry_id)["unresolved_links"]
+    reasons = {item["target"]: item["reason"] for item in unresolved}
+    assert reasons["Does Not Exist"] == "missing"
+    assert reasons["Shared"] == "ambiguous"
+
+
+def test_a_column_is_resolved_across_every_board_when_none_is_named(
+    ctx: RunContext[Zenith],
+) -> None:
+    """Without a board, a column has to be checked against all of them.
+
+    `Done` exists on one board only. Resolving it against a single board would
+    reject a column that really does exist somewhere in the vault.
+    """
+    assert tools.find_tasks(ctx, columns=["Done"], limit=20)
+
+    # Named against the board that lacks it, the same column is still a miss,
+    # and the reply names that board's columns rather than the whole vault's.
+    with pytest.raises(ModelRetry, match="unknown Kanban column") as missing:
+        tools.find_tasks(ctx, board="Kitchen App", columns=["Done"])
+    listed = str(missing.value).split("this board has ")[1]
+    assert "ToDo" in listed
+    assert "Done" not in listed
+
+
+def test_an_oversized_note_is_marked_as_a_fragment() -> None:
+    """A whole note has no size bound, so `read_note` can still clip one.
+
+    The flag is what stops the model concluding that a note does not mention
+    something, from a part of it that does not.
+    """
+    from zenith.agent import projections
+    from zenith.core.contracts import NoteContent, NoteType
+
+    content = NoteContent("n", "p.md", "N", NoteType.STANDARD, "a" * (MAX_NOTE_CHARS + 500))
+    projected = projections.note(content)
+
+    assert projected["content_truncated"] is True
+    assert projected["content"].endswith("[... truncated]")
+    assert len(projected["content"]) <= MAX_NOTE_CHARS + 64
+
+
+def test_a_library_bug_is_not_disguised_as_a_model_mistake() -> None:
+    """`_repair` turns a bad argument into a retry. A defect is not one.
+
+    Handing a real fault back to the model as a retry would spend the whole
+    usage limit re-calling a tool that cannot work, and hide the fault.
+    """
+    with pytest.raises(TypeError):
+        with tools._repair():
+            raise TypeError("the library is broken")
