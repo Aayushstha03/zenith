@@ -194,11 +194,11 @@ def test_ask_reports_the_answer_with_the_evidence_it_looked_at(
     monkeypatch.setattr(agent_service, "TOOLS", [search_notes])
     monkeypatch.setattr(agent_service, "build_model", lambda settings: FunctionModel(script))
 
-    assert main(["ask", "what did I do?", "--model", "google/gemma-4-e4b"]) == 0
+    assert main(["ask", "what did I do?", "--model", "lfm2.5-8b-a1b"]) == 0
     payload = json.loads(capsys.readouterr().out)
 
     assert payload["answer"] == "You worked on the pipeline."
-    assert payload["model"] == "google/gemma-4-e4b"
+    assert payload["model"] == "lfm2.5-8b-a1b"
     assert payload["question"] == "what did I do?"
     # The trace is part of the result: an answer is only as good as what it read.
     assert payload["tool_calls"] == [
