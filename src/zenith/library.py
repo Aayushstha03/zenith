@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import PurePosixPath
 from typing import Any
-import unicodedata
 
 from qdrant_client import QdrantClient
 
@@ -251,7 +251,7 @@ class Zenith:
             for board in boards
             if needle in {_key(board.path), _key(PurePosixPath(board.path).with_suffix("").as_posix())}
         ]
-        matches = path_matches or [board for board in boards if _key(board.name) == needle]
+        matches = path_matches or [board for board in boards if _key(board.title) == needle]
         if not matches:
             raise LookupError(f"Kanban board not found: {board_name_or_path}")
         if len(matches) > 1:
@@ -272,7 +272,7 @@ class Zenith:
         semantic_text: str | None = None,
         limit: int = 10,
     ) -> tuple[SearchResult, ...]:
-        board_name = self.get_kanban_board(board).name if board is not None else None
+        board_name = self.get_kanban_board(board).title if board is not None else None
         selected_mode = _mode(None, exact_text, None, semantic_text)
         return self.retriever.search(
             QueryPlan(
@@ -359,18 +359,18 @@ def _board(cards: list[SearchResult]) -> KanbanBoard:
         sorted(
             cards,
             key=lambda card: (
-                card.kanban.column_position if card.kanban else 0,
-                card.kanban.card_position if card.kanban else 0,
+                card.board.column_position if card.board else 0,
+                card.board.card_position if card.board else 0,
                 card.entry_id,
             ),
         )
     )
     first = ordered[0]
-    assert first.kanban is not None
+    assert first.board is not None
     columns = tuple(
-        dict.fromkeys(card.kanban.column for card in ordered if card.kanban is not None)
+        dict.fromkeys(card.board.column for card in ordered if card.board is not None)
     )
-    return KanbanBoard(first.note_id, first.path, first.kanban.name, columns, ordered)
+    return KanbanBoard(first.note_id, first.path, first.note_title, columns, ordered)
 
 
 def _key(value: str) -> str:

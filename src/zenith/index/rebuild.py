@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-import hashlib
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -15,9 +15,9 @@ from zenith.core.config import Settings
 from zenith.core.contracts import ParsedEntry, ParsedNote, QdrantPayload
 from zenith.index.encoders import LocalEncoders
 from zenith.index.links import resolve_links
-from zenith.index.schema import SCHEMA_VERSION, create_collection
+from zenith.index.qdrant import alias_target
+from zenith.index.schema import create_collection
 from zenith.parser.service import PARSER_VERSION, VaultParser
-
 
 ENCODER_VERSION = "fastembed-0.7.3"
 TOKENIZER_VERSION = "bm25-english-stemming-stopwords-v1"
@@ -55,7 +55,7 @@ class IndexRebuilder:
         notes = resolve_links(VaultParser(self.settings, self.vault_id).parse_vault())
         entries = [entry for note in notes for entry in note.entries]
         temporary = f"{self.settings.collection_name}__build_{uuid4().hex}"
-        previous = self._alias_target()
+        previous = alias_target(self.client, self.settings.collection_name)
 
         try:
             create_collection(self.client, temporary)
@@ -101,10 +101,6 @@ class IndexRebuilder:
             link.target_note_id for link in entry.outgoing_links if link.target_note_id is not None
         )
         return QdrantPayload(
-            schema_version=SCHEMA_VERSION,
-            parser_version=PARSER_VERSION,
-            embedding_model=self.settings.dense_model,
-            sparse_model=self.settings.sparse_model,
             vault_id=self.vault_id,
             note_id=entry.note_id,
             entry_id=entry.entry_id,
@@ -125,23 +121,26 @@ class IndexRebuilder:
             web_links=entry.web_links,
             content_hash=entry.content_hash,
             modified_at=modified_at,
-            board=entry.kanban,
-            encoder_version=ENCODER_VERSION,
-            tokenizer_version=TOKENIZER_VERSION,
-            embedding_input_version=EMBEDDING_INPUT_VERSION,
-            embedding_input_hash=hashlib.sha256(entry.embedding_text.encode("utf-8")).hexdigest(),
+            embedding_fingerprint=self._embedding_fingerprint(entry.embedding_text),
+            board=entry.board,
         ).to_dict()
 
-    def _alias_target(self) -> str | None:
-        aliases = self.client.get_aliases().aliases
-        return next(
-            (
-                alias.collection_name
-                for alias in aliases
-                if alias.alias_name == self.settings.collection_name
-            ),
-            None,
+    def _embedding_fingerprint(self, embedding_text: str) -> str:
+        """Digest every input that decides whether a stored vector is still valid.
+
+        The fixed parts lead and the free-form text goes last, so no embedding
+        text can imitate a different parser or model by carrying a separator.
+        """
+        parts = (
+            PARSER_VERSION,
+            self.settings.dense_model,
+            self.settings.sparse_model,
+            ENCODER_VERSION,
+            TOKENIZER_VERSION,
+            EMBEDDING_INPUT_VERSION,
+            embedding_text,
         )
+        return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
     def _verify_sources_unchanged(self, notes: tuple[ParsedNote, ...]) -> None:
         for note in notes:

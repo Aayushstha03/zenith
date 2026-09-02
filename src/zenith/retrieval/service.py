@@ -192,7 +192,6 @@ def _result(
         entry_type=EntryType(payload["entry_type"]),
         mode=mode,
         text=payload["text"],
-        excerpt=payload["text"],
         heading=payload["heading"],
         heading_path=tuple(payload["heading_path"]),
         start_line=payload["start_line"],
@@ -203,7 +202,7 @@ def _result(
         outgoing_links=tuple(_link(link) for link in payload["outgoing_links"]),
         score=score,
         verified=verified,
-        kanban=KanbanData(**board) if board is not None else None,
+        board=KanbanData(**board) if board is not None else None,
     )
 
 

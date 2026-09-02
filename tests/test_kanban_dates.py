@@ -7,7 +7,6 @@ from zenith.core.contracts import WarningType
 from zenith.parser.kanban import card_annotations
 from zenith.parser.service import VaultParser
 
-
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
 
@@ -21,7 +20,7 @@ def parse(vault: Path):
 
 def board(vault: Path, path: str):
     # The same card text can appear in more than one column, so key on both.
-    return {(entry.kanban.column, entry.text): entry for entry in parse(vault)[path].entries}
+    return {(entry.board.column, entry.text): entry for entry in parse(vault)[path].entries}
 
 
 def test_card_date_becomes_the_entry_date() -> None:
@@ -59,8 +58,8 @@ def test_plugin_syntax_never_reaches_searchable_text_or_the_embedding() -> None:
 
 def test_the_card_time_is_kept_as_structured_metadata() -> None:
     card = board(FIXTURE_VAULT, "kanban/Kitchen App.md")[("complete", "Finished kitchen setup")]
-    assert card.kanban.card_time == "14:30"
-    assert card.kanban.checked is True
+    assert card.board.card_time == "14:30"
+    assert card.board.checked is True
 
 
 def test_an_impossible_date_warns_and_dates_nothing() -> None:
@@ -138,4 +137,4 @@ def test_a_card_that_is_only_an_annotation_leaks_no_plugin_syntax(tmp_path: Path
             assert marker not in entry.text
             assert marker not in entry.embedding_text
     assert [entry.entry_date for entry in entries] == ["2026-05-12", None, "2026-06-06"]
-    assert entries[1].kanban.card_time == "14:30"
+    assert entries[1].board.card_time == "14:30"

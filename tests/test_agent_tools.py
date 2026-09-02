@@ -1,10 +1,10 @@
 """The tool surface the answering model is given, tested without a model."""
 
-from pathlib import Path
 import re
 import shutil
 import typing
 import warnings
+from pathlib import Path
 
 import pytest
 from pydantic_ai import ModelRetry, RunContext
@@ -18,7 +18,6 @@ from zenith.agent.projections import MAX_ENTRY_CHARS, MAX_NOTE_CHARS
 from zenith.core.config import Settings
 from zenith.index.rebuild import IndexRebuilder
 from zenith.library import Zenith
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
@@ -195,7 +194,7 @@ def test_a_clipped_entry_only_claims_a_verified_match_it_can_show() -> None:
     text = "a" * 3000 + f" {phrase} " + "b" * 3000
     result = SearchResult(
         "e", "n", "p.md", "N", NoteType.STANDARD, EntryType.FREEFORM_SECTION,
-        RetrievalMode.LITERAL, text, text, None, (), 1, 9, None, None, (), (),
+        RetrievalMode.LITERAL, text, None, (), 1, 9, None, None, (), (),
         verified=True,
     )
 
@@ -304,9 +303,8 @@ def test_a_library_bug_is_not_disguised_as_a_model_mistake() -> None:
     Handing a real fault back to the model as a retry would spend the whole
     usage limit re-calling a tool that cannot work, and hide the fault.
     """
-    with pytest.raises(TypeError):
-        with tools._repair():
-            raise TypeError("the library is broken")
+    with pytest.raises(TypeError), tools._repair():
+        raise TypeError("the library is broken")
 
 
 def test_an_entry_id_sent_to_read_note_says_what_to_send_instead(

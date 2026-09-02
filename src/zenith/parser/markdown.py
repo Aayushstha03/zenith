@@ -26,7 +26,7 @@ URL_RE = re.compile(r"https?://[^\s<>]+")
 class Frontmatter:
     values: dict[str, Any]
     body_start: int
-    warning: str | None = None
+    warning: IndexWarning | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,21 +49,26 @@ class Prose:
     warnings: tuple[IndexWarning, ...]
 
 
-def parse_frontmatter(content: str) -> Frontmatter:
+def parse_frontmatter(content: str, path: str = "") -> Frontmatter:
+    def failure(body_start: int, message: str) -> Frontmatter:
+        return Frontmatter(
+            {}, body_start, IndexWarning(WarningType.PARSER_FAILURE, path, message, 1)
+        )
+
     lines = content.splitlines()
     if not lines or lines[0].strip() != "---":
         return Frontmatter({}, 0)
     try:
         closing = next(index for index in range(1, len(lines)) if lines[index].strip() == "---")
     except StopIteration:
-        return Frontmatter({}, 0, "frontmatter opening marker has no closing marker")
+        return failure(0, "frontmatter opening marker has no closing marker")
     raw = "\n".join(lines[1:closing])
     try:
         values = yaml.safe_load(raw) or {}
     except yaml.YAMLError as exc:
-        return Frontmatter({}, closing + 1, f"invalid frontmatter: {exc}")
+        return failure(closing + 1, f"invalid frontmatter: {exc}")
     if not isinstance(values, dict):
-        return Frontmatter({}, closing + 1, "frontmatter must be a mapping")
+        return failure(closing + 1, "frontmatter must be a mapping")
     return Frontmatter(values, closing + 1)
 
 

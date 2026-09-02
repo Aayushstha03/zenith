@@ -82,13 +82,22 @@ class Link:
 
 @dataclass(frozen=True, slots=True)
 class KanbanData:
-    name: str
     column: str
     status: str | None
     column_position: int
     card_position: int
     checked: bool
     card_time: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NoteRef:
+    """How every contract identifies the note it belongs to."""
+
+    note_id: str
+    path: str
+    title: str
+    note_type: NoteType
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +119,7 @@ class ParsedEntry:
     outgoing_links: tuple[Link, ...] = ()
     web_links: tuple[str, ...] = ()
     content_hash: str = ""
-    kanban: KanbanData | None = None
+    board: KanbanData | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,11 +131,7 @@ class IndexWarning:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedNote:
-    note_id: str
-    path: str
-    title: str
-    note_type: NoteType
+class ParsedNote(NoteRef):
     content_hash: str
     entries: tuple[ParsedEntry, ...]
     warnings: tuple[IndexWarning, ...] = ()
@@ -179,10 +184,6 @@ QUERY_TEXT_FIELDS: dict[RetrievalMode, tuple[str, ...]] = {
 
 @dataclass(frozen=True, slots=True)
 class QdrantPayload:
-    schema_version: int
-    parser_version: str
-    embedding_model: str
-    sparse_model: str
     vault_id: str
     note_id: str
     entry_id: str
@@ -203,11 +204,12 @@ class QdrantPayload:
     web_links: tuple[str, ...]
     content_hash: str
     modified_at: str
+    # One digest over every input that decides whether a stored vector is still
+    # valid: the parser, both model names, the encoder and tokenizer versions,
+    # the embedding-input format, and the embedding text itself. A point whose
+    # fingerprint no longer matches is re-embedded.
+    embedding_fingerprint: str
     board: KanbanData | None = None
-    encoder_version: str = "1"
-    tokenizer_version: str = "fastembed-bm25-english-v1"
-    embedding_input_version: str = "1"
-    embedding_input_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))
@@ -223,7 +225,6 @@ class SearchResult:
     entry_type: EntryType
     mode: RetrievalMode
     text: str
-    excerpt: str
     heading: str | None
     heading_path: tuple[str, ...]
     start_line: int
@@ -234,18 +235,14 @@ class SearchResult:
     outgoing_links: tuple[Link, ...]
     score: float | None = None
     verified: bool | None = None
-    kanban: KanbanData | None = None
+    board: KanbanData | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))
 
 
 @dataclass(frozen=True, slots=True)
-class NoteView:
-    note_id: str
-    path: str
-    title: str
-    note_type: NoteType
+class NoteView(NoteRef):
     entries: tuple[SearchResult, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -253,13 +250,9 @@ class NoteView:
 
 
 @dataclass(frozen=True, slots=True)
-class NoteContent:
+class NoteContent(NoteRef):
     """One complete Markdown note, exactly as it is stored in the vault."""
 
-    note_id: str
-    path: str
-    title: str
-    note_type: NoteType
     content: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -270,7 +263,7 @@ class NoteContent:
 class KanbanBoard:
     note_id: str
     path: str
-    name: str
+    title: str
     columns: tuple[str, ...]
     cards: tuple[SearchResult, ...]
 
@@ -312,11 +305,7 @@ class ContextExpansion:
 
 
 @dataclass(frozen=True, slots=True)
-class NetworkNode:
-    note_id: str
-    path: str
-    title: str
-    note_type: NoteType
+class NetworkNode(NoteRef):
     tags: tuple[str, ...] = ()
     dates: tuple[str, ...] = ()
 

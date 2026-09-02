@@ -7,11 +7,12 @@ from typing import Any
 
 from qdrant_client import models
 
-from zenith.core.config import Settings
 from zenith.core.contracts import ParsedEntry
 from zenith.core.identity import normalize_vault_path
 from zenith.index.links import resolve_links
+from zenith.index.qdrant import scroll_all, vault_condition
 from zenith.index.rebuild import IndexRebuilder
+from zenith.index.schema import DENSE_VECTOR, SPARSE_VECTOR
 from zenith.parser.service import VaultParser
 
 
@@ -106,43 +107,16 @@ class IncrementalIndexer(IndexRebuilder):
         )
 
     def _existing_points(self) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        offset: object | None = None
-        vault_filter = models.Filter(
-            must=[
-                models.FieldCondition(
-                    key="vault_id",
-                    match=models.MatchValue(value=self.vault_id),
-                )
-            ]
+        vault_filter = models.Filter(must=[vault_condition(self.vault_id)])
+        records = scroll_all(
+            self.client, self.settings.collection_name, vault_filter, with_vectors=True
         )
-        while True:
-            records, offset = self.client.scroll(
-                collection_name=self.settings.collection_name,
-                scroll_filter=vault_filter,
-                limit=256,
-                offset=offset,
-                with_payload=True,
-                with_vectors=True,
-            )
-            result.update({str(record.id): record for record in records})
-            if offset is None:
-                return result
+        return {str(record.id): record for record in records}
 
 
 def _embedding_compatible(existing: dict[str, object], desired: dict[str, object]) -> bool:
-    keys = (
-        "schema_version",
-        "parser_version",
-        "embedding_model",
-        "sparse_model",
-        "encoder_version",
-        "tokenizer_version",
-        "embedding_input_version",
-        "embedding_input_hash",
-    )
-    return all(existing.get(key) == desired.get(key) for key in keys)
+    return existing.get("embedding_fingerprint") == desired.get("embedding_fingerprint")
 
 
 def _has_vectors(vector: object) -> bool:
-    return isinstance(vector, dict) and "semantic" in vector and "text-bm25" in vector
+    return isinstance(vector, dict) and DENSE_VECTOR in vector and SPARSE_VECTOR in vector

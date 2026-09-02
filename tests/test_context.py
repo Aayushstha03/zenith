@@ -34,7 +34,6 @@ def result(
         entry_type=entry_type,
         mode=RetrievalMode.METADATA,
         text=f"evidence from {entry_id}",
-        excerpt=f"evidence from {entry_id}",
         heading=entry_id,
         heading_path=(entry_id,),
         start_line=1,

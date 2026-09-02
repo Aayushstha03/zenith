@@ -66,9 +66,12 @@ def test_rebuild_validates_points_then_atomically_switches_alias() -> None:
     assert report.previous_collection == "entries__old"
     assert len(client.alias_operations) == 2
     payload = client.points[0].payload
-    assert payload["schema_version"] == 5
-    assert payload["parser_version"] == "3.1.1"
-    assert payload["embedding_input_version"] == "3"
+    # One digest now stands in for the parser, model, encoder, tokenizer, and
+    # embedding-input versions. Assert it is a real digest and that it tells
+    # two different entries apart, which is all `_embedding_compatible` asks.
+    fingerprints = {point.payload["embedding_fingerprint"] for point in client.points}
+    assert all(len(value) == 64 for value in fingerprints)
+    assert len(fingerprints) > 1
     assert payload["start_line"] >= 1
 
 

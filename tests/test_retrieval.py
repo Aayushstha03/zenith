@@ -1,6 +1,6 @@
-from pathlib import Path
 import re
 import warnings
+from pathlib import Path
 
 import pytest
 from qdrant_client import QdrantClient, models
@@ -12,7 +12,6 @@ from zenith.index.rebuild import IndexRebuilder
 from zenith.index.schema import create_collection
 from zenith.retrieval.literal import verify_literal
 from zenith.retrieval.service import Retriever
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 DENSE_DIMS = 384
@@ -74,10 +73,6 @@ def index_fixture_vault(tmp_path: Path) -> tuple[QdrantClient, Settings]:
 
 def base_payload(**overrides: object) -> dict[str, object]:
     payload = {
-        "schema_version": 3,
-        "parser_version": "test",
-        "embedding_model": "test",
-        "sparse_model": "test",
         "vault_id": "personal",
         "note_id": "note-1",
         "entry_id": "e1",
@@ -98,11 +93,8 @@ def base_payload(**overrides: object) -> dict[str, object]:
         "web_links": [],
         "content_hash": "x",
         "modified_at": "2026-01-01T00:00:00Z",
+        "embedding_fingerprint": "",
         "board": None,
-        "encoder_version": "1",
-        "tokenizer_version": "1",
-        "embedding_input_version": "1",
-        "embedding_input_hash": "",
     }
     payload.update(overrides)
     return payload
@@ -265,15 +257,15 @@ def test_entry_type_and_kanban_filters(tmp_path: Path) -> None:
     upsert_point(
         client, 1,
         base_payload(
-            entry_id="p1", entry_type="kanban_card",
-            board={"name": "Kitchen", "column": "Doing", "status": None, "column_position": 0, "card_position": 0, "checked": False},
+            entry_id="p1", entry_type="kanban_card", note_title="Kitchen",
+            board={"column": "Doing", "status": None, "column_position": 0, "card_position": 0, "checked": False},
         ),
     )
     upsert_point(
         client, 2,
         base_payload(
-            entry_id="p2", entry_type="kanban_card",
-            board={"name": "Kitchen", "column": "Done", "status": None, "column_position": 1, "card_position": 0, "checked": True},
+            entry_id="p2", entry_type="kanban_card", note_title="Kitchen",
+            board={"column": "Done", "status": None, "column_position": 1, "card_position": 0, "checked": True},
         ),
     )
     upsert_point(client, 3, base_payload(entry_id="p3", entry_type="freeform_section"))
@@ -288,7 +280,7 @@ def test_entry_type_and_kanban_filters(tmp_path: Path) -> None:
     by_checked = retriever.search(QueryPlan(mode=RetrievalMode.METADATA, kanban_checked=True))
     result = by_checked[0]
     assert {r.entry_id for r in by_checked} == {"p2"}
-    assert result.kanban.column == "Done"
+    assert result.board.column == "Done"
 
 
 def test_date_range_matches_note_date_or_entry_date_while_staying_distinct(tmp_path: Path) -> None:

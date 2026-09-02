@@ -53,7 +53,7 @@ class VaultParser:
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         note_uuid = str(note_id(self.vault_id, relative))
         note_type = classify_path(relative, self.settings)
-        frontmatter = parse_frontmatter(content)
+        frontmatter = parse_frontmatter(content, relative)
         tokens = markdown_tokens(content)
         parsed_headings = tuple(
             heading for heading in headings(tokens, len(lines)) if heading.line > frontmatter.body_start
@@ -61,7 +61,7 @@ class VaultParser:
         title = note_title(frontmatter, parsed_headings, resolved.stem)
         warnings: list[IndexWarning] = []
         if frontmatter.warning:
-            warnings.append(IndexWarning(WarningType.PARSER_FAILURE, relative, frontmatter.warning, 1))
+            warnings.append(frontmatter.warning)
 
         metadata = dict(frontmatter.values)
         if note_type is NoteType.KANBAN:

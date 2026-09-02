@@ -5,7 +5,6 @@ from zenith.core.config import Settings
 from zenith.core.contracts import EntryType, NoteType, WarningType
 from zenith.parser.service import VaultParser
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 VAULT = FIXTURES / "vault"
 
@@ -37,7 +36,7 @@ def summary(note):
         data["tags"] = [list(entry.tags) for entry in note.entries]
     elif note.note_type is NoteType.KANBAN:
         data["columns"] = note.metadata["columns"]
-        data["checked"] = [entry.kanban.checked for entry in note.entries]
+        data["checked"] = [entry.board.checked for entry in note.entries]
     else:
         data["dates"] = [entry.entry_date for entry in note.entries]
     return data
@@ -102,10 +101,10 @@ def test_kanban_preserves_state_order_nested_content_and_settings() -> None:
     assert "Preserve this nested detail" in kitchen.entries[1].text
     assert "kanban-plugin" not in "\n".join(entry.text for entry in kitchen.entries)
     inconsistent = notes["kanban/Inconsistent.md"]
-    assert inconsistent.entries[0].kanban.checked is True
-    assert inconsistent.entries[0].kanban.status == "doing"
-    assert inconsistent.entries[1].kanban.checked is False
-    assert inconsistent.entries[1].kanban.status == "complete"
+    assert inconsistent.entries[0].board.checked is True
+    assert inconsistent.entries[0].board.status == "doing"
+    assert inconsistent.entries[1].board.checked is False
+    assert inconsistent.entries[1].board.status == "complete"
     assert any(warning.kind is WarningType.INVALID_KANBAN_SETTINGS for warning in inconsistent.warnings)
 
 

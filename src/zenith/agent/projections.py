@@ -15,7 +15,6 @@ from zenith.core.contracts import (
     SearchResult,
 )
 
-
 # Most entries fit the dense token window, but `pack` deliberately emits a
 # single paragraph larger than the budget rather than cutting a sentence in
 # half, so an entry can still overrun this. A whole note has no bound at all.
@@ -57,12 +56,12 @@ def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
         not result.verified or not truncated or _contains(text, match)
     ):
         projected["exact_match_verified"] = result.verified
-    if result.kanban is not None:
+    if result.board is not None:
         projected["task"] = {
-            "board": result.kanban.name,
-            "column": result.kanban.column,
-            "status": result.kanban.status,
-            "checked": result.kanban.checked,
+            "board": result.note_title,
+            "column": result.board.column,
+            "status": result.board.status,
+            "checked": result.board.checked,
         }
     return projected
 

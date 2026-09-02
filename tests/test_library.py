@@ -1,7 +1,7 @@
-from pathlib import Path
 import re
 import shutil
 import warnings
+from pathlib import Path
 
 import pytest
 from qdrant_client import QdrantClient, models
@@ -12,7 +12,6 @@ from zenith.core.identity import note_id
 from zenith.index.rebuild import IndexRebuilder
 from zenith.library import Zenith
 from zenith.parser.service import VaultParser
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
@@ -91,7 +90,7 @@ def test_library_warning_and_kanban_operations(tmp_path: Path) -> None:
     assert warnings[0].path == "kanban/Inconsistent.md"
 
     boards = api.list_kanban_boards()
-    assert {board.name for board in boards} == {"Inconsistent", "Kitchen App"}
+    assert {board.title for board in boards} == {"Inconsistent", "Kitchen App"}
     kitchen = api.get_kanban_board("kanban/Kitchen App.md")
     assert kitchen.columns == ("ToDo", "Doing", "complete")
 
@@ -99,7 +98,7 @@ def test_library_warning_and_kanban_operations(tmp_path: Path) -> None:
         board="Kitchen App", columns=("ToDo",), statuses=("todo",), checked=False, limit=20
     )
     assert len(open_todo) == 6
-    assert all(card.kanban and card.kanban.column == "ToDo" for card in open_todo)
+    assert all(card.board and card.board.column == "ToDo" for card in open_todo)
 
 
 def test_library_context_graph_and_reindex_surface(tmp_path: Path) -> None:

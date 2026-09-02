@@ -50,7 +50,6 @@ object:
   "entry_type": "project_update",
   "mode": "lexical",
   "text": "Original searchable text",
-  "excerpt": "Original searchable text",
   "heading": "2026-08-19",
   "heading_path": ["News Resolution", "2026-08-19"],
   "start_line": 3,
@@ -61,7 +60,7 @@ object:
   "outgoing_links": [],
   "score": 7.3312263,
   "verified": null,
-  "kanban": null
+  "board": null
 }
 ```
 
@@ -96,7 +95,6 @@ Kanban cards include:
 
 ```json
 {
-  "name": "Kitchen App",
   "column": "ToDo",
   "status": "todo",
   "column_position": 0,
@@ -157,8 +155,7 @@ budget waiting for one.
     "errors": [],
     "physical_collection": "zenith_entries__build_...",
     "points": 38,
-    "ready": true,
-    "schema_versions": [4]
+    "ready": true
   },
   "models": {"ready": true},
   "qdrant": {"ready": true, "status": 200},
@@ -178,7 +175,7 @@ Returns both the complete health report and focused index inspection:
 ```json
 {
   "health": {"ready": true},
-  "index": {"ready": true, "points": 38, "schema_versions": [4]}
+  "index": {"ready": true, "points": 38}
 }
 ```
 
@@ -615,8 +612,8 @@ resolution; this command does not mutate the index.
 docker compose exec zenith zenith kanban list
 ```
 
-Returns `{"boards": [{"name": "Board", "cards": []}]}`. Each board has `note_id`, `path`,
-`name`, ordered `columns`, and ordered `cards`.
+Returns `{"boards": [{"title": "Board", "cards": []}]}`. Each board has `note_id`, `path`,
+`title`, ordered `columns`, and ordered `cards`.
 
 ### `kanban get BOARD_OR_PATH`
 
