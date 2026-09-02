@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date
-import re
 from typing import Any
 
+import yaml
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
-import yaml
 
 from zenith.core.contracts import IndexWarning, Link, SourceRange, WarningType
-
 
 # Vault dates have one deliberately non-configurable representation. Using
 # ASCII digit classes and fullmatch prevents timestamps, prefixes, suffixes,
@@ -98,7 +97,7 @@ def headings(tokens: list[Token], total_lines: int) -> tuple[Heading, ...]:
             stack.pop()
         own_date = valid_iso_date(text)
         inherited_date = next((item[2] for item in reversed(stack) if item[2]), None)
-        path = tuple(item[1] for item in stack) + (text,)
+        path = (*(item[1] for item in stack), text)
         next_line = raw[index + 1][1] if index + 1 < len(raw) else total_lines
         result.append(Heading(level, text, line + 1, line + 1, next_line, path, own_date or inherited_date))
         stack.append((level, text, own_date or inherited_date))
@@ -123,7 +122,7 @@ def prose_between(
 ) -> Prose:
     chunks: list[str] = []
     web_links: list[str] = []
-    line_by_chunk: list[int] = []
+    chunk_lines: list[int] = []
     for token in tokens:
         if token.type != "inline" or token.map is None:
             continue
@@ -140,11 +139,11 @@ def prose_between(
         text = "".join(parts).strip()
         if text:
             chunks.append(text)
-            line_by_chunk.append(token.map[0] + 1)
+            chunk_lines.append(token.map[0] + 1)
 
     text = "\n".join(chunks).strip()
-    for match in URL_RE.finditer(text):
-        web_links.append(match.group(0).rstrip(".,);"))
+    spans = _chunk_spans(chunks, chunk_lines)
+    web_links.extend(match.group(0).rstrip(".,);") for match in URL_RE.finditer(text))
 
     known = {tag.casefold() for tag in known_tags}
     aliases = dict(tag_aliases)
@@ -159,16 +158,15 @@ def prose_between(
         else:
             warnings.append(IndexWarning(WarningType.UNKNOWN_TAG, path, f"unknown tag: #{raw_tag}"))
 
-    links: list[Link] = []
-    for match in WIKI_RE.finditer(text):
-        links.append(
-            Link(
-                target_text=match.group(1).strip(),
-                target_heading=match.group(2).strip() if match.group(2) else None,
-                alias=match.group(3).strip() if match.group(3) else None,
-                line=line_by_chunk[0] if line_by_chunk else None,
-            )
+    links = [
+        Link(
+            target_text=match.group(1).strip(),
+            target_heading=match.group(2).strip() if match.group(2) else None,
+            alias=match.group(3).strip() if match.group(3) else None,
+            line=_line_at(spans, text, match.start()),
         )
+        for match in WIKI_RE.finditer(text)
+    ]
     return Prose(
         text=text,
         tags=tuple(tags),
@@ -176,6 +174,36 @@ def prose_between(
         web_links=tuple(dict.fromkeys(web_links)),
         warnings=tuple(warnings),
     )
+
+
+def _chunk_spans(
+    chunks: list[str], chunk_lines: list[int]
+) -> tuple[tuple[int, int], ...]:
+    """Pair each chunk's offset in the joined text with its first source line."""
+    spans: list[tuple[int, int]] = []
+    offset = 0
+    for chunk, line in zip(chunks, chunk_lines, strict=True):
+        spans.append((offset, line))
+        offset += len(chunk) + 1  # the newline `prose_between` joins chunks with
+    return tuple(spans)
+
+
+def _line_at(spans: tuple[tuple[int, int], ...], text: str, position: int) -> int | None:
+    """Return the source line the character at `position` came from.
+
+    Blocks are separated by blank lines the joined text does not keep, so
+    counting newlines from the start would drift. Anchor on the chunk the
+    position falls in, then count the newlines inside that chunk alone; each
+    one is a softbreak, and a softbreak is one source line.
+    """
+    anchor = next(
+        (span for span in reversed(spans) if span[0] <= position),
+        None,
+    )
+    if anchor is None:
+        return None
+    offset, line = anchor
+    return line + text.count("\n", offset, position)
 
 
 def meaningful_line_range(lines: list[str], start_zero: int, end_zero: int) -> SourceRange | None:

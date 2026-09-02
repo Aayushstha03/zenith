@@ -69,6 +69,9 @@ def test_tags_and_links_come_only_from_eligible_prose() -> None:
         "Does Not Exist",
         "Shared",
     ]
+    # Each link reports the line it is written on. They share one paragraph, so
+    # a link used to inherit the line of the first prose in its section.
+    assert [link.line for link in links] == [20, 21, 22]
     text = "\n".join(item.text for item in note.entries)
     assert "Not a link" not in text
     assert "Still not a link" not in text
