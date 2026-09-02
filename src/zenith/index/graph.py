@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from itertools import combinations
-import hashlib
 from typing import Any
 
 from qdrant_client import QdrantClient, models
@@ -18,6 +18,7 @@ from zenith.core.contracts import (
     NetworkNode,
     NoteType,
 )
+from zenith.index.qdrant import scroll_all, vault_condition
 
 
 class GraphExporter:
@@ -41,25 +42,9 @@ class GraphExporter:
         return NetworkGraph(nodes=nodes, edges=tuple(edges))
 
     def _payloads(self) -> list[dict[str, Any]]:
-        filter_ = models.Filter(
-            must=[
-                models.FieldCondition(key="vault_id", match=models.MatchValue(value=self.vault_id))
-            ]
-        )
-        result: list[dict[str, Any]] = []
-        offset: object | None = None
-        while True:
-            records, offset = self.client.scroll(
-                collection_name=self.settings.collection_name,
-                scroll_filter=filter_,
-                limit=256,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-            result.extend(record.payload for record in records)
-            if offset is None:
-                return result
+        filter_ = models.Filter(must=[vault_condition(self.vault_id)])
+        records = scroll_all(self.client, self.settings.collection_name, filter_)
+        return [record.payload for record in records]
 
     @staticmethod
     def _nodes(payloads: list[dict[str, Any]]) -> tuple[NetworkNode, ...]:

@@ -1,14 +1,12 @@
 """Coverage for the chunking path: no entry silently overruns the encoder."""
 
+from itertools import pairwise
 from pathlib import Path
-
-import pytest
 
 from zenith.core.config import Settings
 from zenith.core.contracts import EntryType, WarningType
 from zenith.parser.service import VaultParser
 from zenith.parser.tokens import content_budget, estimate_tokens
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
@@ -81,7 +79,7 @@ def test_chunk_line_ranges_stay_inside_the_note_and_never_overlap() -> None:
                 by_heading.setdefault(entry.heading_path, []).append(entry)
         for pieces in by_heading.values():
             ordered = sorted(pieces, key=lambda item: item.source.start_line)
-            for earlier, later in zip(ordered, ordered[1:], strict=False):
+            for earlier, later in pairwise(ordered):
                 assert earlier.source.end_line < later.source.start_line, (
                     f"{note.path} chunks overlap: {earlier.source} then {later.source}"
                 )
@@ -133,7 +131,7 @@ def test_an_unsplittable_paragraph_warns_instead_of_truncating_silently(tmp_path
     assert len([entry for entry in note.entries if entry.heading == "Section"]) == 1
 
 
-def test_parsing_is_repeatable(tmp_path: Path) -> None:
+def test_parsing_is_repeatable() -> None:
     first = parse(FIXTURE_VAULT)
     second = parse(FIXTURE_VAULT)
     assert [(p, [e.entry_id for e in n.entries]) for p, n in sorted(first.items())] == [

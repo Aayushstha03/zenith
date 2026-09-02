@@ -121,7 +121,7 @@ class ContextExpander:
         return ContextExpansion(
             source_entry_id=entry_id,
             items=tuple(items),
-            diagnostics=tuple(_dedupe_diagnostics(diagnostics)),
+            diagnostics=tuple(dict.fromkeys(diagnostics)),
             inspected_note_ids=tuple(inspected),
         )
 
@@ -214,21 +214,3 @@ def _evidence_date(result: SearchResult) -> date | None:
 def _distance(result: SearchResult, anchor: date) -> int:
     value = _evidence_date(result)
     return abs((value - anchor).days) if value is not None else 10**9
-
-
-def _dedupe_diagnostics(
-    diagnostics: list[TraversalDiagnostic],
-) -> list[TraversalDiagnostic]:
-    seen: set[tuple[object, ...]] = set()
-    result: list[TraversalDiagnostic] = []
-    for diagnostic in diagnostics:
-        key = (
-            diagnostic.source_note_id,
-            diagnostic.target_text,
-            diagnostic.resolution,
-            diagnostic.line,
-        )
-        if key not in seen:
-            seen.add(key)
-            result.append(diagnostic)
-    return result

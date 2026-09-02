@@ -146,7 +146,6 @@ class QueryPlan:
     literal_text: str | None = None
     lexical_text: str | None = None
     semantic_text: str | None = None
-    follow_links: bool = False
     link_depth: int = 1
     nearby_days: int = 3
     max_linked_notes: int = 5
@@ -165,6 +164,17 @@ class QueryPlan:
             raise ValueError("max_linked_notes must be between 1 and 5")
         if self.limit <= 0:
             raise ValueError("limit must be positive")
+
+
+# Which query text each retrieval mode consumes. One mapping, so a caller that
+# turns a mode and a query into a plan never has to restate the rule.
+QUERY_TEXT_FIELDS: dict[RetrievalMode, tuple[str, ...]] = {
+    RetrievalMode.METADATA: (),
+    RetrievalMode.LITERAL: ("literal_text",),
+    RetrievalMode.LEXICAL: ("lexical_text",),
+    RetrievalMode.SEMANTIC: ("semantic_text",),
+    RetrievalMode.HYBRID: ("lexical_text", "semantic_text"),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,9 +348,7 @@ class NetworkGraph:
 def _jsonable(value: Any) -> Any:
     if isinstance(value, StrEnum):
         return value.value
-    if isinstance(value, tuple):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, list):
+    if isinstance(value, (tuple, list)):
         return [_jsonable(item) for item in value]
     if isinstance(value, dict):
         return {key: _jsonable(item) for key, item in value.items()}

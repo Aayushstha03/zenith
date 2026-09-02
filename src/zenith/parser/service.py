@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 import hashlib
+from collections import defaultdict
 from pathlib import Path
 
 from zenith.core.config import Settings
@@ -25,14 +25,13 @@ from zenith.parser.markdown import (
     Prose,
     headings,
     markdown_tokens,
+    meaningful_line_range,
     note_title,
     parse_frontmatter,
     prose_between,
-    meaningful_line_range,
     valid_iso_date,
 )
 from zenith.parser.tokens import content_budget, estimate_tokens
-
 
 PARSER_VERSION = "3.1.1"
 
@@ -90,7 +89,6 @@ class VaultParser:
                 relative=relative,
                 title=title,
                 note_uuid=note_uuid,
-                content_hash=content_hash,
             )
             warnings.extend(entry_warnings)
             if note_type is NoteType.LOG and note_date is None:
@@ -103,7 +101,7 @@ class VaultParser:
             note_type=note_type,
             content_hash=content_hash,
             entries=entries,
-            warnings=tuple(_dedupe_warnings(warnings)),
+            warnings=tuple(dict.fromkeys(warnings)),
             metadata=metadata,
         )
 
@@ -126,7 +124,6 @@ class VaultParser:
         relative: str,
         title: str,
         note_uuid: str,
-        content_hash: str,
     ) -> tuple[tuple[ParsedEntry, ...], tuple[IndexWarning, ...]]:
         entries: list[ParsedEntry] = []
         warnings: list[IndexWarning] = []
@@ -299,17 +296,6 @@ def _unique_key(key: str, duplicates: defaultdict[str, int]) -> str:
     """Keep identical text in one note distinct without depending on position."""
     duplicates[key] += 1
     return f"{key}:{duplicates[key]}"
-
-
-def _dedupe_warnings(warnings: list[IndexWarning]) -> list[IndexWarning]:
-    result: list[IndexWarning] = []
-    seen: set[tuple[object, ...]] = set()
-    for warning in warnings:
-        key = (warning.kind, warning.path, warning.message, warning.line)
-        if key not in seen:
-            seen.add(key)
-            result.append(warning)
-    return result
 
 
 def _embedding_text(

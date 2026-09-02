@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, replace
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
+from dataclasses import asdict, replace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event
 from typing import Any, TextIO
 
 from qdrant_client import QdrantClient
 
 from zenith.core.config import Settings
-from zenith.core.contracts import EntryType, RetrievalMode, WarningType
+from zenith.core.contracts import QUERY_TEXT_FIELDS, EntryType, RetrievalMode, WarningType
 from zenith.index.diagnostics import inspect_collection
 from zenith.index.incremental import IncrementalIndexer
 from zenith.index.schema import initialize_index
@@ -35,7 +35,7 @@ def _print(data: object, *, file: TextIO | None = None) -> None:
 
 def _handler(settings: Settings) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             if self.path not in {"/health", "/healthz"}:
                 self.send_error(404)
                 return
@@ -397,17 +397,14 @@ def _usage(result: object) -> dict[str, int | None]:
 
 
 def _query_texts(mode: RetrievalMode, query: str | None) -> dict[str, str | None]:
-    if mode is RetrievalMode.METADATA:
+    fields = QUERY_TEXT_FIELDS[mode]
+    if not fields:
         return {}
     if not query:
         raise ValueError(f"{mode.value} mode requires query text")
-    if mode is RetrievalMode.LITERAL:
-        return {"exact_text": query}
-    if mode is RetrievalMode.LEXICAL:
-        return {"lexical_text": query}
-    if mode is RetrievalMode.SEMANTIC:
-        return {"semantic_text": query}
-    return {"lexical_text": query, "semantic_text": query}
+    # `find_entries` calls the literal field `exact_text`; a plan calls it
+    # `literal_text`. Every other name is shared.
+    return {("exact_text" if field == "literal_text" else field): query for field in fields}
 
 
 def _optional_bool(value: str | None) -> bool | None:

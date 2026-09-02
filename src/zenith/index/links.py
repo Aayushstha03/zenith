@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import unicodedata
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import PurePosixPath
-import unicodedata
 
 from zenith.core.contracts import (
     IndexWarning,
@@ -107,7 +107,7 @@ def _resolve_note(
                     )
                 )
         entries.append(replace(entry, outgoing_links=tuple(links)))
-    return replace(note, entries=tuple(entries), warnings=tuple(_dedupe(warnings)))
+    return replace(note, entries=tuple(entries), warnings=tuple(dict.fromkeys(warnings)))
 
 
 def _candidates(
@@ -136,14 +136,3 @@ def _aliases(note: ParsedNote) -> tuple[str, ...]:
 
 def _key(value: str) -> str:
     return unicodedata.normalize("NFC", value).casefold().strip()
-
-
-def _dedupe(warnings: list[IndexWarning]) -> list[IndexWarning]:
-    result: list[IndexWarning] = []
-    seen: set[tuple[object, ...]] = set()
-    for warning in warnings:
-        key = (warning.kind, warning.path, warning.message, warning.line)
-        if key not in seen:
-            seen.add(key)
-            result.append(warning)
-    return result

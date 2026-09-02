@@ -9,13 +9,14 @@ unbounded, so neither is offered here.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
 from zenith.agent import projections
 from zenith.library import Zenith
-
 
 _ENTRY_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
@@ -161,18 +162,15 @@ def _columns(
 TOOLS = [search_notes, read_note, expand_context, find_backlinks, find_tasks]
 
 
-class _repair:
+@contextmanager
+def _repair() -> Iterator[None]:
     """Turn a library error into an instruction the model can act on.
 
     The library already says what went wrong and, for an ambiguous name, which
     notes it could have meant. `ModelRetry` hands that text back to the model
     so it can correct the call instead of the run failing.
     """
-
-    def __enter__(self) -> None:
-        return None
-
-    def __exit__(self, kind: type[BaseException] | None, error: BaseException | None, _: object) -> bool:
-        if isinstance(error, (LookupError, ValueError)):
-            raise ModelRetry(str(error)) from error
-        return False
+    try:
+        yield
+    except (LookupError, ValueError) as error:
+        raise ModelRetry(str(error)) from error

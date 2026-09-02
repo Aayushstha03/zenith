@@ -8,6 +8,7 @@ from qdrant_client import QdrantClient, models
 
 from zenith.core.config import Settings
 from zenith.core.contracts import (
+    QUERY_TEXT_FIELDS,
     EntryType,
     KanbanData,
     Link,
@@ -18,6 +19,8 @@ from zenith.core.contracts import (
     SearchResult,
 )
 from zenith.index.encoders import LocalEncoders
+from zenith.index.qdrant import scroll_all, vault_condition
+from zenith.index.schema import DENSE_VECTOR, SPARSE_VECTOR
 from zenith.retrieval.filters import build_filter
 from zenith.retrieval.literal import verify_literal
 
@@ -57,15 +60,12 @@ class Retriever:
     def get_entry(self, entry_id: str) -> SearchResult | None:
         filter_ = models.Filter(
             must=[
-                models.FieldCondition(key="vault_id", match=models.MatchValue(value=self.vault_id)),
+                vault_condition(self.vault_id),
                 models.FieldCondition(key="entry_id", match=models.MatchValue(value=entry_id)),
             ]
         )
-        records = self._scroll_all(filter_)
-        if not records:
-            return None
-        records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
-        return _result(records[0].payload, RetrievalMode.METADATA)
+        results = self._ordered(filter_, limit=1)
+        return results[0] if results else None
 
     def get_note_entries(self, note_id: str) -> tuple[SearchResult, ...]:
         return self.metadata_all(
@@ -76,22 +76,18 @@ class Retriever:
         plan = plan or QueryPlan(mode=RetrievalMode.METADATA)
         if plan.mode is not RetrievalMode.METADATA:
             raise ValueError("metadata_all requires metadata mode")
-        records = self._scroll_all(build_filter(plan, self.vault_id))
-        records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
-        return tuple(_result(record.payload, RetrievalMode.METADATA) for record in records)
+        return self._ordered(build_filter(plan, self.vault_id))
 
     def get_backlinks(self, note_id: str) -> tuple[SearchResult, ...]:
         filter_ = models.Filter(
             must=[
-                models.FieldCondition(key="vault_id", match=models.MatchValue(value=self.vault_id)),
+                vault_condition(self.vault_id),
                 models.FieldCondition(
                     key="outgoing_note_ids", match=models.MatchValue(value=note_id)
                 ),
             ]
         )
-        records = self._scroll_all(filter_)
-        records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
-        return tuple(_result(record.payload, RetrievalMode.METADATA) for record in records)
+        return self._ordered(filter_)
 
     def search_within(
         self,
@@ -102,86 +98,50 @@ class Retriever:
         section: str | None = None,
         limit: int = 1,
     ) -> tuple[SearchResult, ...]:
-        if mode is RetrievalMode.METADATA:
-            return self.search(
-                QueryPlan(mode=mode, note_id=note_id, section=section, limit=limit)
-            )
-        if mode is RetrievalMode.LITERAL:
-            return self.search(
-                QueryPlan(
-                    mode=mode,
-                    note_id=note_id,
-                    section=section,
-                    literal_text=query,
-                    limit=limit,
-                )
-            )
-        if mode is RetrievalMode.LEXICAL:
-            return self.search(
-                QueryPlan(
-                    mode=mode,
-                    note_id=note_id,
-                    section=section,
-                    lexical_text=query,
-                    limit=limit,
-                )
-            )
-        if mode is RetrievalMode.SEMANTIC:
-            return self.search(
-                QueryPlan(
-                    mode=mode,
-                    note_id=note_id,
-                    section=section,
-                    semantic_text=query,
-                    limit=limit,
-                )
-            )
+        texts = dict.fromkeys(QUERY_TEXT_FIELDS[mode], query)
         return self.search(
-            QueryPlan(
-                mode=mode,
-                note_id=note_id,
-                section=section,
-                lexical_text=query,
-                semantic_text=query,
-                limit=limit,
-            )
+            QueryPlan(mode=mode, note_id=note_id, section=section, limit=limit, **texts)
         )
 
-    def _metadata(self, filter_: models.Filter, plan: QueryPlan) -> tuple[SearchResult, ...]:
+    def _ordered(
+        self, filter_: models.Filter, limit: int | None = None
+    ) -> tuple[SearchResult, ...]:
+        """Read every matching record, in stable document order."""
         records = self._scroll_all(filter_)
-        records.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
-        return tuple(_result(record.payload, plan.mode) for record in records[: plan.limit])
+        records.sort(key=_by_position)
+        selected = records if limit is None else records[:limit]
+        return tuple(_result(record.payload, RetrievalMode.METADATA) for record in selected)
+
+    def _metadata(self, filter_: models.Filter, plan: QueryPlan) -> tuple[SearchResult, ...]:
+        return self._ordered(filter_, limit=plan.limit)
 
     def _literal(self, filter_: models.Filter, plan: QueryPlan) -> tuple[SearchResult, ...]:
         if not plan.literal_text:
             raise ValueError("literal mode requires literal_text")
         candidates = self._scroll_all(filter_)
         verified = [record for record in candidates if verify_literal(plan.literal_text, record.payload["text"])]
-        verified.sort(key=lambda record: (record.payload["path"], record.payload["start_line"]))
+        verified.sort(key=_by_position)
         return tuple(_result(record.payload, plan.mode, verified=True) for record in verified[: plan.limit])
 
     def _lexical(self, filter_: models.Filter, plan: QueryPlan) -> tuple[SearchResult, ...]:
         if not plan.lexical_text:
             raise ValueError("lexical mode requires lexical_text")
         sparse_vector = self.encoders.encode_sparse([plan.lexical_text])[0]
-        response = self.client.query_points(
-            collection_name=self.settings.collection_name,
-            query=sparse_vector,
-            using="text-bm25",
-            query_filter=filter_,
-            limit=plan.limit,
-            with_payload=True,
-        )
-        return tuple(_result(point.payload, plan.mode, score=point.score) for point in response.points)
+        return self._vector_search(sparse_vector, SPARSE_VECTOR, filter_, plan)
 
     def _semantic(self, filter_: models.Filter, plan: QueryPlan) -> tuple[SearchResult, ...]:
         if not plan.semantic_text:
             raise ValueError("semantic mode requires semantic_text")
         dense_vector = self.encoders.encode_dense([plan.semantic_text])[0]
+        return self._vector_search(dense_vector, DENSE_VECTOR, filter_, plan)
+
+    def _vector_search(
+        self, vector: Any, using: str, filter_: models.Filter, plan: QueryPlan
+    ) -> tuple[SearchResult, ...]:
         response = self.client.query_points(
             collection_name=self.settings.collection_name,
-            query=dense_vector,
-            using="semantic",
+            query=vector,
+            using=using,
             query_filter=filter_,
             limit=plan.limit,
             with_payload=True,
@@ -197,8 +157,8 @@ class Retriever:
         response = self.client.query_points(
             collection_name=self.settings.collection_name,
             prefetch=[
-                models.Prefetch(query=dense_vector, using="semantic", filter=filter_, limit=prefetch_limit),
-                models.Prefetch(query=sparse_vector, using="text-bm25", filter=filter_, limit=prefetch_limit),
+                models.Prefetch(query=dense_vector, using=DENSE_VECTOR, filter=filter_, limit=prefetch_limit),
+                models.Prefetch(query=sparse_vector, using=SPARSE_VECTOR, filter=filter_, limit=prefetch_limit),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             query_filter=filter_,
@@ -208,20 +168,11 @@ class Retriever:
         return tuple(_result(point.payload, plan.mode, score=point.score) for point in response.points)
 
     def _scroll_all(self, filter_: models.Filter) -> list[Any]:
-        result: list[Any] = []
-        offset: object | None = None
-        while True:
-            records, offset = self.client.scroll(
-                collection_name=self.settings.collection_name,
-                scroll_filter=filter_,
-                limit=256,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-            result.extend(records)
-            if offset is None:
-                return result
+        return scroll_all(self.client, self.settings.collection_name, filter_)
+
+
+def _by_position(record: Any) -> tuple[str, int]:
+    return (record.payload["path"], record.payload["start_line"])
 
 
 def _result(
