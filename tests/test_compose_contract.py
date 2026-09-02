@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 
 
@@ -69,7 +68,7 @@ def test_the_image_installs_every_declared_dependency() -> None:
 
 
 def test_runtime_has_no_sqlite_or_cloud_inference_dependency() -> None:
-    runtime_files = list((ROOT / "src").rglob("*.py")) + [ROOT / "pyproject.toml", ROOT / "compose.yaml"]
+    runtime_files = [*(ROOT / "src").rglob("*.py"), ROOT / "pyproject.toml", ROOT / "compose.yaml"]
     runtime = "\n".join(path.read_text().lower() for path in runtime_files)
     assert "sqlite" not in runtime
     assert "fts5" not in runtime

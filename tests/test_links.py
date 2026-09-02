@@ -5,7 +5,6 @@ from zenith.core.contracts import LinkResolution, WarningType
 from zenith.index.links import resolve_link, resolve_links
 from zenith.parser.service import VaultParser
 
-
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
 

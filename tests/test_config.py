@@ -91,7 +91,7 @@ def test_llm_settings_default_to_lm_studio_on_the_host(monkeypatch: pytest.Monke
     assert Settings.from_env().llm_temperature == 0.0
     for rejected in ("-0.1", "2.1"):
         monkeypatch.setenv("ZENITH_LLM_TEMPERATURE", rejected)
-        with pytest.raises(ValueError, match="between 0.0 and 2.0"):
+        with pytest.raises(ValueError, match=r"between 0\.0 and 2\.0"):
             Settings.from_env()
     monkeypatch.delenv("ZENITH_LLM_TEMPERATURE")
 

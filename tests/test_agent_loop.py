@@ -1,10 +1,10 @@
 """The answering agent's tool loop, proved without LM Studio or a network."""
 
-from pathlib import Path
 import json
 import re
 import shutil
 import warnings
+from pathlib import Path
 
 import pytest
 from pydantic_ai.exceptions import UsageLimitExceeded
@@ -25,7 +25,6 @@ from zenith.agent import DEFAULT_LIMITS, build_agent
 from zenith.core.config import Settings
 from zenith.index.rebuild import IndexRebuilder
 from zenith.library import Zenith
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
@@ -73,11 +72,13 @@ def settings(vault_api: Zenith) -> Settings:
 def _returns(messages: list[ModelMessage], tool_name: str) -> list[object]:
     """Collect what the tools actually handed back to the model."""
     returned = []
-    for message in messages:
-        if isinstance(message, ModelRequest):
-            for part in message.parts:
-                if isinstance(part, ToolReturnPart) and part.tool_name == tool_name:
-                    returned.append(part.content)
+    returned.extend(
+        part.content
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == tool_name
+    )
     return returned
 
 

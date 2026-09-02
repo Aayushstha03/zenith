@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from openai import AsyncOpenAI
-
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.profiles.openai import OpenAIModelProfile
@@ -16,7 +15,6 @@ from pydantic_ai.usage import UsageLimits
 from zenith.agent.tools import TOOLS
 from zenith.core.config import Settings
 from zenith.library import Zenith
-
 
 INSTRUCTIONS = """
 You answer questions about one person's Markdown notes. The notes are the only

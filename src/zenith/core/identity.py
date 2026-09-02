@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
 import unicodedata
+from pathlib import PurePosixPath
 from uuid import NAMESPACE_URL, UUID, uuid5
-
 
 IDENTITY_VERSION = "1"
 

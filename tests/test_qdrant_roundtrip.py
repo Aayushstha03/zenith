@@ -1,5 +1,5 @@
-from pathlib import Path
 import warnings
+from pathlib import Path
 
 from qdrant_client import QdrantClient, models
 
@@ -8,7 +8,6 @@ from zenith.index.links import resolve_links
 from zenith.index.rebuild import IndexRebuilder
 from zenith.index.schema import create_collection
 from zenith.parser.service import VaultParser
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 

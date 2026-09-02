@@ -6,7 +6,6 @@ from zenith.core.config import Settings
 from zenith.core.contracts import NoteType
 from zenith.parser.discovery import classify_path, discover_markdown
 
-
 VAULT = Path(__file__).parent / "fixtures" / "vault"
 
 

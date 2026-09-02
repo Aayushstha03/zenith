@@ -9,7 +9,6 @@ from qdrant_client import models
 
 from zenith.core.config import Settings
 
-
 DENSE_DIMENSIONS = 384
 
 

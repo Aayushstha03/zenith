@@ -19,6 +19,7 @@ zenith = "zenith.runtime.cli:main"
 [dependency-groups]
 dev = [
     "pytest==8.4.1",
+    "ruff==0.14.5",
 ]
 
 [build-system]
@@ -28,3 +29,40 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+[tool.ruff]
+# The code sits under 100 columns at the 99th percentile. 110 leaves the few
+# deliberately wide lines alone and still flags a line that has run away.
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes: unused imports, names, and redefinitions
+    "E", "W", # pycodestyle
+    "I",      # import sorting
+    "UP",     # rewrite for the Python version we target
+    "B",      # bugbear
+    "SIM",    # simplifiable branches and comprehensions
+    "C4",     # comprehension shortcuts
+    "PERF",   # loops that should be comprehensions
+    "RUF",    # ruff's own checks
+    "ARG",    # arguments no body reads
+    "PIE",
+    "RET",
+]
+ignore = [
+    "E501",    # the formatter owns wrapping; `line-length` above still applies
+    "RET504",  # a named result before `return` often is the explanation
+    "SIM108",  # a ternary is not always clearer than an if
+    "B008",    # call-in-default is deliberate where it appears
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures, callbacks, and test doubles mirror real signatures, so they carry
+# arguments no body reads. Fakes also hold plain mutable attributes.
+"tests/*" = ["ARG001", "ARG002", "ARG005", "RUF012"]
+# The Unicode digit lookalikes are the subject of the test, not a typo.
+"tests/test_dates.py" = ["RUF001"]
+# `BaseHTTPRequestHandler` fixes the names and arity of what we override.
+"src/zenith/runtime/cli.py" = ["ARG002"]

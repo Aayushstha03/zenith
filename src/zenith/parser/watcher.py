@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from threading import current_thread, Lock, Timer
+from threading import Lock, Timer, current_thread
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from zenith.core.config import Settings
-
 
 ChangeCallback = Callable[[tuple[str, ...]], None]
 
@@ -89,7 +88,7 @@ class VaultWatcher:
         self.observer.join()
         self.handler.close()
 
-    def __enter__(self) -> "VaultWatcher":
+    def __enter__(self) -> VaultWatcher:
         self.start()
         return self
 

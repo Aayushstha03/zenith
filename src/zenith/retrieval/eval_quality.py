@@ -18,7 +18,6 @@ from zenith.core.contracts import QueryPlan, RetrievalMode
 from zenith.index.rebuild import IndexRebuilder
 from zenith.retrieval.service import Retriever
 
-
 LABELED_QUERIES: tuple[dict[str, object], ...] = (
     {
         "label": "exact technical terms (lexical-favorable)",

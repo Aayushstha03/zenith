@@ -76,16 +76,16 @@ def test_graph_export_is_complete_evidenced_unbounded_and_deterministic(tmp_path
             note_date="2026-08-21T00:00:00Z",
         ),
     ]
-    for number in range(7):
-        payloads.append(
-            payload(
-                f"target-{number}",
-                f"target-entry-{number}",
-                tags=["shared"] if number == 0 else [],
-                note_date="2026-08-20T00:00:00Z" if number == 0 else None,
-                entry_date="2026-08-18T00:00:00Z" if number == 1 else None,
-            )
+    payloads.extend(
+        payload(
+            f"target-{number}",
+            f"target-entry-{number}",
+            tags=["shared"] if number == 0 else [],
+            note_date="2026-08-20T00:00:00Z" if number == 0 else None,
+            entry_date="2026-08-18T00:00:00Z" if number == 1 else None,
         )
+        for number in range(7)
+    )
 
     exporter = GraphExporter(settings(tmp_path), client=GraphClient(list(reversed(payloads))))
     first = exporter.export()

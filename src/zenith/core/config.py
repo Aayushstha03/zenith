@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
-import os
-
 
 DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SPARSE_MODEL = "Qdrant/bm25"
@@ -114,7 +113,7 @@ class Settings:
     llm_temperature: float = LLM_TEMPERATURE
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         return cls(
             qdrant_url=os.getenv("ZENITH_QDRANT_URL", "http://qdrant:6333").rstrip("/"),
             vault_path=Path(os.getenv("ZENITH_VAULT_PATH", "/vault")),
