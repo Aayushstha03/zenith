@@ -28,6 +28,8 @@ PAYLOAD_INDEXES: tuple[tuple[str, models.PayloadSchemaType], ...] = (
     ("entry_date", models.PayloadSchemaType.DATETIME),
     ("tags", models.PayloadSchemaType.KEYWORD),
     ("outgoing_note_ids", models.PayloadSchemaType.KEYWORD),
+    ("note_aliases", models.PayloadSchemaType.KEYWORD),
+    ("outgoing_link_keys", models.PayloadSchemaType.KEYWORD),
     ("text", models.PayloadSchemaType.TEXT),
     ("board.column", models.PayloadSchemaType.KEYWORD),
     ("board.status", models.PayloadSchemaType.KEYWORD),

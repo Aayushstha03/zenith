@@ -14,9 +14,10 @@ from qdrant_client import QdrantClient, models
 from zenith.core.config import Settings
 from zenith.core.contracts import ParsedEntry, ParsedNote, QdrantPayload
 from zenith.index.encoders import LocalEncoders
-from zenith.index.links import resolve_links
+from zenith.index.links import link_key, resolve_links
 from zenith.index.qdrant import alias_target
 from zenith.index.schema import create_collection
+from zenith.parser.markdown import frontmatter_aliases
 from zenith.parser.service import PARSER_VERSION, VaultParser
 
 ENCODER_VERSION = "fastembed-0.7.3"
@@ -59,7 +60,7 @@ class IndexRebuilder:
 
         try:
             create_collection(self.client, temporary)
-            self._upsert(temporary, entries)
+            self._upsert(temporary, entries, note_alias_map(notes))
             actual = self.client.count(collection_name=temporary, exact=True).count
             if actual != len(entries):
                 raise RuntimeError(f"rebuild validation failed: expected {len(entries)} points, found {actual}")
@@ -70,6 +71,11 @@ class IndexRebuilder:
                 self.client.delete_collection(temporary)
             raise
 
+        # The alias now points at the new collection, so the old one is dead
+        # weight. Leaving it behind kept a full copy of the vault per rebuild.
+        if previous is not None and self.client.collection_exists(previous):
+            self.client.delete_collection(previous)
+
         return RebuildReport(
             collection=self.settings.collection_name,
             physical_collection=temporary,
@@ -79,7 +85,13 @@ class IndexRebuilder:
             previous_collection=previous,
         )
 
-    def _upsert(self, collection: str, entries: list[ParsedEntry], batch_size: int = 64) -> None:
+    def _upsert(
+        self,
+        collection: str,
+        entries: list[ParsedEntry],
+        aliases: dict[str, tuple[str, ...]],
+        batch_size: int = 64,
+    ) -> None:
         for start in range(0, len(entries), batch_size):
             batch = entries[start : start + batch_size]
             vectors = self.encoders.encode([entry.embedding_text for entry in batch])
@@ -87,16 +99,19 @@ class IndexRebuilder:
                 models.PointStruct(
                     id=entry.entry_id,
                     vector=vector,
-                    payload=self._payload(entry),
+                    payload=self._payload(entry, aliases.get(entry.note_id, ())),
                 )
                 for entry, vector in zip(batch, vectors, strict=True)
             ]
             self.client.upsert(collection_name=collection, points=points, wait=True)
 
-    def _payload(self, entry: ParsedEntry) -> dict[str, object]:
-        modified_at = datetime.fromtimestamp(
-            (self.settings.vault_path / Path(entry.path)).stat().st_mtime, UTC
-        ).isoformat()
+    def _payload(self, entry: ParsedEntry, note_aliases: tuple[str, ...] = ()) -> dict[str, object]:
+        try:
+            modified_at = datetime.fromtimestamp(
+                (self.settings.vault_path / Path(entry.path)).stat().st_mtime, UTC
+            ).isoformat()
+        except OSError as error:
+            raise RuntimeError(f"vault changed during indexing: {entry.path}") from error
         outgoing_ids = tuple(
             link.target_note_id for link in entry.outgoing_links if link.target_note_id is not None
         )
@@ -122,6 +137,10 @@ class IndexRebuilder:
             content_hash=entry.content_hash,
             modified_at=modified_at,
             embedding_fingerprint=self._embedding_fingerprint(entry.embedding_text),
+            note_aliases=note_aliases,
+            outgoing_link_keys=tuple(
+                dict.fromkeys(link_key(link.target_text) for link in entry.outgoing_links)
+            ),
             board=entry.board,
         ).to_dict()
 
@@ -145,7 +164,10 @@ class IndexRebuilder:
     def _verify_sources_unchanged(self, notes: tuple[ParsedNote, ...]) -> None:
         for note in notes:
             source = self.settings.vault_path / Path(note.path)
-            current_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+            try:
+                current_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+            except OSError as error:
+                raise RuntimeError(f"vault changed during rebuild: {note.path}") from error
             if current_hash != note.content_hash:
                 raise RuntimeError(f"vault changed during rebuild: {note.path}")
 
@@ -166,6 +188,11 @@ class IndexRebuilder:
             )
         )
         self.client.update_collection_aliases(change_aliases_operations=operations)
+
+
+def note_alias_map(notes: tuple[ParsedNote, ...]) -> dict[str, tuple[str, ...]]:
+    """Aliases live on the note, but a payload is built from one entry."""
+    return {note.note_id: frontmatter_aliases(note.metadata) for note in notes}
 
 
 def _qdrant_date(value: str | None) -> str | None:

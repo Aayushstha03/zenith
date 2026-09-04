@@ -5,7 +5,7 @@ from qdrant_client import QdrantClient, models
 
 from zenith.core.config import Settings
 from zenith.index.links import resolve_links
-from zenith.index.rebuild import IndexRebuilder
+from zenith.index.rebuild import IndexRebuilder, note_alias_map
 from zenith.index.schema import create_collection
 from zenith.parser.service import VaultParser
 
@@ -39,7 +39,7 @@ def test_all_payloads_and_vectors_round_trip_through_qdrant(tmp_path: Path) -> N
     indexer = IndexRebuilder(settings, client=client, encoders=Encoders())
     notes = resolve_links(VaultParser(settings).parse_vault())
     entries = [entry for note in notes for entry in note.entries]
-    indexer._upsert("entries", entries)
+    indexer._upsert("entries", entries, note_alias_map(notes))
 
     records, next_offset = client.scroll(
         "entries", limit=100, with_payload=True, with_vectors=True

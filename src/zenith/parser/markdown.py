@@ -109,6 +109,17 @@ def headings(tokens: list[Token], total_lines: int) -> tuple[Heading, ...]:
     return tuple(result)
 
 
+def frontmatter_aliases(values: dict[str, Any] | None) -> tuple[str, ...]:
+    """Read the alternative names a note declares, under either spelling."""
+    metadata = values or {}
+    raw = metadata.get("aliases", metadata.get("alias", ()))
+    if isinstance(raw, str):
+        return (raw,)
+    if isinstance(raw, list):
+        return tuple(item for item in raw if isinstance(item, str))
+    return ()
+
+
 def note_title(frontmatter: Frontmatter, parsed_headings: tuple[Heading, ...], fallback: str) -> str:
     explicit = frontmatter.values.get("title")
     if isinstance(explicit, str) and explicit.strip():

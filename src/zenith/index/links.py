@@ -4,80 +4,76 @@ from __future__ import annotations
 
 import unicodedata
 from collections import defaultdict
-from dataclasses import replace
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
 from zenith.core.contracts import (
     IndexWarning,
     Link,
     LinkResolution,
+    NoteHeader,
     ParsedEntry,
     ParsedNote,
     WarningType,
 )
+from zenith.parser.markdown import frontmatter_aliases
+
+
+@dataclass(frozen=True, slots=True)
+class Catalog:
+    """Every name the vault answers to, and the note behind each one.
+
+    Building this needs every note, but only four fields of each. Resolving one
+    note against it needs nothing else, which is the split a scoped update
+    depends on.
+    """
+
+    by_name: dict[str, list[NoteHeader]]
+    by_path: dict[str, NoteHeader]
+
+
+def note_header(note: ParsedNote) -> NoteHeader:
+    return NoteHeader(note.note_id, note.path, note.title, frontmatter_aliases(note.metadata))
+
+
+def build_catalog(headers: Iterable[NoteHeader]) -> Catalog:
+    by_name: defaultdict[str, list[NoteHeader]] = defaultdict(list)
+    by_path: dict[str, NoteHeader] = {}
+    for header in headers:
+        by_path[path_key(header.path)] = header
+        for name in _name_keys(header):
+            by_name[name].append(header)
+    return Catalog(by_name, by_path)
+
+
+def note_names(header: NoteHeader) -> frozenset[str]:
+    """Every key a wikilink can use to reach this note, path form included."""
+    return frozenset({*_name_keys(header), path_key(header.path)})
+
+
+def link_key(target_text: str) -> str:
+    """The one normalized string a wikilink is compared against."""
+    without_suffix = _without_suffix(target_text)
+    return _key(without_suffix.strip("/") if "/" in without_suffix else without_suffix)
+
+
+def path_key(path: str) -> str:
+    return _key(PurePosixPath(path).with_suffix("").as_posix())
 
 
 def resolve_links(notes: tuple[ParsedNote, ...]) -> tuple[ParsedNote, ...]:
-    by_name, by_path = _catalog(notes)
-    return tuple(_resolve_note(note, by_name, by_path) for note in notes)
+    catalog = build_catalog(note_header(note) for note in notes)
+    return tuple(resolve_note(note, catalog) for note in notes)
 
 
-def resolve_link(
-    notes: tuple[ParsedNote, ...], source_note_id: str, target_text: str
-) -> Link:
-    if not any(note.note_id == source_note_id for note in notes):
-        raise LookupError(f"source note not found: {source_note_id}")
-    raw = target_text.strip()
-    if raw.startswith("[[") and raw.endswith("]]"):
-        raw = raw[2:-2].strip()
-    destination, alias_separator, alias = raw.partition("|")
-    target, separator, heading = destination.partition("#")
-    if not target.strip():
-        raise ValueError("target_text must name a note")
-    by_name, by_path = _catalog(notes)
-    candidates = _candidates(target, by_name, by_path)
-    if len(candidates) == 1:
-        return Link(
-            target_text=target.strip(),
-            target_note_id=candidates[0].note_id,
-            target_heading=heading.strip() if separator and heading.strip() else None,
-            alias=alias.strip() if alias_separator and alias.strip() else None,
-            resolution=LinkResolution.RESOLVED,
-        )
-    return Link(
-        target_text=target.strip(),
-        target_heading=heading.strip() if separator and heading.strip() else None,
-        alias=alias.strip() if alias_separator and alias.strip() else None,
-        resolution=(LinkResolution.AMBIGUOUS if candidates else LinkResolution.MISSING),
-    )
-
-
-def _catalog(
-    notes: tuple[ParsedNote, ...],
-) -> tuple[defaultdict[str, list[ParsedNote]], dict[str, ParsedNote]]:
-    by_name: defaultdict[str, list[ParsedNote]] = defaultdict(list)
-    by_path: dict[str, ParsedNote] = {}
-    for note in notes:
-        path = _key(PurePosixPath(note.path).with_suffix("").as_posix())
-        by_path[path] = note
-        names = {PurePosixPath(note.path).stem, note.title, *_aliases(note)}
-        for name in names:
-            if name.strip():
-                by_name[_key(name)].append(note)
-    return by_name, by_path
-
-
-def _resolve_note(
-    note: ParsedNote,
-    by_name: dict[str, list[ParsedNote]],
-    by_path: dict[str, ParsedNote],
-) -> ParsedNote:
+def resolve_note(note: ParsedNote, catalog: Catalog) -> ParsedNote:
     warnings = list(note.warnings)
     entries: list[ParsedEntry] = []
     for entry in note.entries:
         links: list[Link] = []
         for link in entry.outgoing_links:
-            candidates = _candidates(link.target_text, by_name, by_path)
+            candidates = _candidates(link.target_text, catalog)
             if len(candidates) == 1:
                 links.append(
                     replace(
@@ -110,28 +106,54 @@ def _resolve_note(
     return replace(note, entries=tuple(entries), warnings=tuple(dict.fromkeys(warnings)))
 
 
-def _candidates(
-    target: str,
-    by_name: dict[str, list[ParsedNote]],
-    by_path: dict[str, ParsedNote],
-) -> list[ParsedNote]:
-    normalized = target.strip().replace("\\", "/")
-    without_suffix = normalized[:-3] if normalized.casefold().endswith(".md") else normalized
+def resolve_link(
+    notes: tuple[ParsedNote, ...], source_note_id: str, target_text: str
+) -> Link:
+    if not any(note.note_id == source_note_id for note in notes):
+        raise LookupError(f"source note not found: {source_note_id}")
+    raw = target_text.strip()
+    if raw.startswith("[[") and raw.endswith("]]"):
+        raw = raw[2:-2].strip()
+    destination, alias_separator, alias = raw.partition("|")
+    target, separator, heading = destination.partition("#")
+    if not target.strip():
+        raise ValueError("target_text must name a note")
+    catalog = build_catalog(note_header(note) for note in notes)
+    candidates = _candidates(target, catalog)
+    if len(candidates) == 1:
+        return Link(
+            target_text=target.strip(),
+            target_note_id=candidates[0].note_id,
+            target_heading=heading.strip() if separator and heading.strip() else None,
+            alias=alias.strip() if alias_separator and alias.strip() else None,
+            resolution=LinkResolution.RESOLVED,
+        )
+    return Link(
+        target_text=target.strip(),
+        target_heading=heading.strip() if separator and heading.strip() else None,
+        alias=alias.strip() if alias_separator and alias.strip() else None,
+        resolution=(LinkResolution.AMBIGUOUS if candidates else LinkResolution.MISSING),
+    )
+
+
+def _name_keys(header: NoteHeader) -> frozenset[str]:
+    names = {PurePosixPath(header.path).stem, header.title, *header.aliases}
+    return frozenset(_key(name) for name in names if name.strip())
+
+
+def _candidates(target: str, catalog: Catalog) -> list[NoteHeader]:
+    without_suffix = _without_suffix(target)
+    key = link_key(target)
     if "/" in without_suffix:
-        match = by_path.get(_key(without_suffix.strip("/")))
+        match = catalog.by_path.get(key)
         return [match] if match is not None else []
-    unique = {note.note_id: note for note in by_name.get(_key(without_suffix), [])}
-    return sorted(unique.values(), key=lambda note: note.path.casefold())
+    unique = {header.note_id: header for header in catalog.by_name.get(key, [])}
+    return sorted(unique.values(), key=lambda header: header.path.casefold())
 
 
-def _aliases(note: ParsedNote) -> tuple[str, ...]:
-    metadata = note.metadata or {}
-    raw = metadata.get("aliases", metadata.get("alias", ()))
-    if isinstance(raw, str):
-        return (raw,)
-    if isinstance(raw, list):
-        return tuple(item for item in raw if isinstance(item, str))
-    return ()
+def _without_suffix(target: str) -> str:
+    normalized = target.strip().replace("\\", "/")
+    return normalized[:-3] if normalized.casefold().endswith(".md") else normalized
 
 
 def _key(value: str) -> str:

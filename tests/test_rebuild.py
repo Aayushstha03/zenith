@@ -57,6 +57,26 @@ def settings(vault: Path) -> Settings:
     return Settings("http://qdrant:6333", vault, vault / "models", "entries", "127.0.0.1", 8080)
 
 
+def test_rebuild_drops_the_collection_the_alias_left_behind() -> None:
+    vault = Path(__file__).parent / "fixtures" / "vault"
+    client = Client()
+    client.collections.add("entries__old")
+
+    IndexRebuilder(settings(vault), client=client, encoders=Encoders()).rebuild()
+
+    assert client.deleted == ["entries__old"]
+    assert "entries__old" not in client.collections
+
+
+def test_first_rebuild_has_no_previous_collection_to_drop() -> None:
+    vault = Path(__file__).parent / "fixtures" / "vault"
+    client = Client(previous=None)
+
+    IndexRebuilder(settings(vault), client=client, encoders=Encoders()).rebuild()
+
+    assert client.deleted == []
+
+
 def test_rebuild_validates_points_then_atomically_switches_alias() -> None:
     vault = Path(__file__).parent / "fixtures" / "vault"
     client = Client()

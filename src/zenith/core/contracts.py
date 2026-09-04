@@ -101,6 +101,21 @@ class NoteRef:
 
 
 @dataclass(frozen=True, slots=True)
+class NoteHeader:
+    """The little of a note that vault-wide link resolution needs.
+
+    A full parse produces one of these, and so does a cheap read of the file
+    head, which is what lets a scoped update resolve links without reparsing
+    every note in the vault.
+    """
+
+    note_id: str
+    path: str
+    title: str
+    aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ParsedEntry:
     entry_id: str
     note_id: str
@@ -209,6 +224,13 @@ class QdrantPayload:
     # the embedding-input format, and the embedding text itself. A point whose
     # fingerprint no longer matches is re-embedded.
     embedding_fingerprint: str
+    # The other names this note answers to, so a scoped update can tell which
+    # links a rename or a retitle just broke without reparsing the vault.
+    note_aliases: tuple[str, ...] = ()
+    # One normalized lookup key per outgoing link, exactly the string link
+    # resolution compares. Indexed, so the notes that point at a changed note
+    # can be found with a query instead of a full-vault parse.
+    outgoing_link_keys: tuple[str, ...] = ()
     board: KanbanData | None = None
 
     def to_dict(self) -> dict[str, Any]:
