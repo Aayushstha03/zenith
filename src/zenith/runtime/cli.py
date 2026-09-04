@@ -201,8 +201,17 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         def changed(paths: tuple[str, ...]) -> None:
             _print(indexer.reindex(list(paths)).to_dict())
 
+        def failed(error: BaseException) -> None:
+            _print(
+                {"error": {"message": str(error), "type": type(error).__name__}},
+                file=sys.stderr,
+            )
+
         try:
-            with VaultWatcher(settings, changed):
+            with VaultWatcher(settings, changed, on_error=failed) as watcher:
+                # Index once before waiting, so edits made while the watcher
+                # was down are not stranded until the next manual update.
+                watcher.catch_up()
                 Event().wait()
         except KeyboardInterrupt:
             return 0
