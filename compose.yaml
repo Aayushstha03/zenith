@@ -65,6 +65,42 @@ services:
       - zenith-internal
       - llm
 
+  # The watcher is a second process, not a second copy of the service. It
+  # indexes debounced vault changes and converges the whole vault once at
+  # startup, so edits made while it was down are not stranded. It never calls
+  # the answering model, so it stays off the routed `llm` network.
+  watch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: ${RESTART_POLICY}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    environment:
+      ZENITH_QDRANT_URL: http://qdrant:6333
+      ZENITH_VAULT_PATH: /vault
+      ZENITH_MODEL_CACHE_PATH: /models
+      ZENITH_COLLECTION: ${ZENITH_COLLECTION}
+      ZENITH_DENSE_MODEL: ${ZENITH_DENSE_MODEL}
+      ZENITH_SPARSE_MODEL: ${ZENITH_SPARSE_MODEL}
+      ZENITH_LOG_ROOT: ${ZENITH_LOG_ROOT}
+      ZENITH_KANBAN_ROOT: ${ZENITH_KANBAN_ROOT}
+      ZENITH_EXCLUDED_DIRECTORIES: ${ZENITH_EXCLUDED_DIRECTORIES}
+      ZENITH_KNOWN_TAGS: ${ZENITH_KNOWN_TAGS}
+      ZENITH_TAG_ALIASES: ${ZENITH_TAG_ALIASES}
+    volumes:
+      - type: bind
+        source: ${ZENITH_VAULT_PATH}
+        target: /vault
+        read_only: true
+      - model-cache:/models
+    # There is no endpoint to probe. The process holds the inotify watches, so
+    # its liveness is its presence, and the restart policy covers a crash.
+    command: ["zenith", "watch"]
+    networks:
+      - zenith-internal
+
   model-prefetch:
     profiles: ["tools"]
     build:

@@ -22,6 +22,21 @@ def test_compose_contract_is_local_persistent_and_read_only() -> None:
     assert compose.count("internal: true") == 1
 
 
+def test_the_watcher_runs_as_its_own_service_off_the_routed_network() -> None:
+    """Indexing must not depend on the answering model being reachable."""
+    compose = (ROOT / "compose.yaml").read_text()
+    assert 'command: ["zenith", "watch"]' in compose
+    watch = compose.split("  watch:", 1)[1].split("\n  model-prefetch:", 1)[0]
+    assert "condition: service_healthy" in watch
+    assert "read_only: true" in watch
+    assert "model-cache:/models" in watch
+    assert "zenith-internal" in watch
+    # The watcher parses and indexes only. Joining `llm` would give the one
+    # long-running vault reader outbound network access it has no use for.
+    assert "- llm" not in watch
+    assert "host.docker.internal" not in watch
+
+
 def test_documented_env_contains_all_compose_settings() -> None:
     env = (ROOT / ".env").read_text()
     example = (ROOT / ".env.example").read_text()
