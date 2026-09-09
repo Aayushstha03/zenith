@@ -82,13 +82,37 @@ class Link:
 
 @dataclass(frozen=True, slots=True)
 class KanbanData:
-    name: str
     column: str
     status: str | None
     column_position: int
     card_position: int
     checked: bool
     card_time: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NoteRef:
+    """How every contract identifies the note it belongs to."""
+
+    note_id: str
+    path: str
+    title: str
+    note_type: NoteType
+
+
+@dataclass(frozen=True, slots=True)
+class NoteHeader:
+    """The little of a note that vault-wide link resolution needs.
+
+    A full parse produces one of these, and so does a cheap read of the file
+    head, which is what lets a scoped update resolve links without reparsing
+    every note in the vault.
+    """
+
+    note_id: str
+    path: str
+    title: str
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +134,7 @@ class ParsedEntry:
     outgoing_links: tuple[Link, ...] = ()
     web_links: tuple[str, ...] = ()
     content_hash: str = ""
-    kanban: KanbanData | None = None
+    board: KanbanData | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,11 +146,7 @@ class IndexWarning:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedNote:
-    note_id: str
-    path: str
-    title: str
-    note_type: NoteType
+class ParsedNote(NoteRef):
     content_hash: str
     entries: tuple[ParsedEntry, ...]
     warnings: tuple[IndexWarning, ...] = ()
@@ -146,7 +166,6 @@ class QueryPlan:
     literal_text: str | None = None
     lexical_text: str | None = None
     semantic_text: str | None = None
-    follow_links: bool = False
     link_depth: int = 1
     nearby_days: int = 3
     max_linked_notes: int = 5
@@ -167,12 +186,19 @@ class QueryPlan:
             raise ValueError("limit must be positive")
 
 
+# Which query text each retrieval mode consumes. One mapping, so a caller that
+# turns a mode and a query into a plan never has to restate the rule.
+QUERY_TEXT_FIELDS: dict[RetrievalMode, tuple[str, ...]] = {
+    RetrievalMode.METADATA: (),
+    RetrievalMode.LITERAL: ("literal_text",),
+    RetrievalMode.LEXICAL: ("lexical_text",),
+    RetrievalMode.SEMANTIC: ("semantic_text",),
+    RetrievalMode.HYBRID: ("lexical_text", "semantic_text"),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class QdrantPayload:
-    schema_version: int
-    parser_version: str
-    embedding_model: str
-    sparse_model: str
     vault_id: str
     note_id: str
     entry_id: str
@@ -193,11 +219,19 @@ class QdrantPayload:
     web_links: tuple[str, ...]
     content_hash: str
     modified_at: str
+    # One digest over every input that decides whether a stored vector is still
+    # valid: the parser, both model names, the encoder and tokenizer versions,
+    # the embedding-input format, and the embedding text itself. A point whose
+    # fingerprint no longer matches is re-embedded.
+    embedding_fingerprint: str
+    # The other names this note answers to, so a scoped update can tell which
+    # links a rename or a retitle just broke without reparsing the vault.
+    note_aliases: tuple[str, ...] = ()
+    # One normalized lookup key per outgoing link, exactly the string link
+    # resolution compares. Indexed, so the notes that point at a changed note
+    # can be found with a query instead of a full-vault parse.
+    outgoing_link_keys: tuple[str, ...] = ()
     board: KanbanData | None = None
-    encoder_version: str = "1"
-    tokenizer_version: str = "fastembed-bm25-english-v1"
-    embedding_input_version: str = "1"
-    embedding_input_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))
@@ -213,7 +247,6 @@ class SearchResult:
     entry_type: EntryType
     mode: RetrievalMode
     text: str
-    excerpt: str
     heading: str | None
     heading_path: tuple[str, ...]
     start_line: int
@@ -224,19 +257,25 @@ class SearchResult:
     outgoing_links: tuple[Link, ...]
     score: float | None = None
     verified: bool | None = None
-    kanban: KanbanData | None = None
+    board: KanbanData | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))
 
 
 @dataclass(frozen=True, slots=True)
-class NoteView:
-    note_id: str
-    path: str
-    title: str
-    note_type: NoteType
+class NoteView(NoteRef):
     entries: tuple[SearchResult, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class NoteContent(NoteRef):
+    """One complete Markdown note, exactly as it is stored in the vault."""
+
+    content: str
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))
@@ -246,7 +285,7 @@ class NoteView:
 class KanbanBoard:
     note_id: str
     path: str
-    name: str
+    title: str
     columns: tuple[str, ...]
     cards: tuple[SearchResult, ...]
 
@@ -288,11 +327,7 @@ class ContextExpansion:
 
 
 @dataclass(frozen=True, slots=True)
-class NetworkNode:
-    note_id: str
-    path: str
-    title: str
-    note_type: NoteType
+class NetworkNode(NoteRef):
     tags: tuple[str, ...] = ()
     dates: tuple[str, ...] = ()
 
@@ -324,9 +359,7 @@ class NetworkGraph:
 def _jsonable(value: Any) -> Any:
     if isinstance(value, StrEnum):
         return value.value
-    if isinstance(value, tuple):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, list):
+    if isinstance(value, (tuple, list)):
         return [_jsonable(item) for item in value]
     if isinstance(value, dict):
         return {key: _jsonable(item) for key, item in value.items()}

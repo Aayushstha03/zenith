@@ -95,10 +95,7 @@ class ContextExpander:
             if (
                 anchor is not None
                 and nearby_days >= 0
-                and (
-                    match.entry_type is EntryType.PROJECT_UPDATE
-                    or match.entry_date is not None
-                )
+                and (match.entry_type is EntryType.PROJECT_UPDATE or match.entry_date is not None)
             ):
                 for history in self._nearby_history(candidate.note_id, anchor, nearby_days):
                     if history.entry_id in seen_items:
@@ -121,13 +118,11 @@ class ContextExpander:
         return ContextExpansion(
             source_entry_id=entry_id,
             items=tuple(items),
-            diagnostics=tuple(_dedupe_diagnostics(diagnostics)),
+            diagnostics=tuple(dict.fromkeys(diagnostics)),
             inspected_note_ids=tuple(inspected),
         )
 
-    def _candidates(
-        self, result: SearchResult
-    ) -> tuple[tuple[_Candidate, ...], list[TraversalDiagnostic]]:
+    def _candidates(self, result: SearchResult) -> tuple[tuple[_Candidate, ...], list[TraversalDiagnostic]]:
         counts: defaultdict[tuple[str, ContextLabel], int] = defaultdict(int)
         sections: dict[tuple[str, ContextLabel], str | None] = {}
         diagnostics: list[TraversalDiagnostic] = []
@@ -154,8 +149,7 @@ class ContextExpander:
             references = sum(
                 1
                 for link in backlink.outgoing_links
-                if link.resolution is LinkResolution.RESOLVED
-                and link.target_note_id == result.note_id
+                if link.resolution is LinkResolution.RESOLVED and link.target_note_id == result.note_id
             )
             if references:
                 counts[(backlink.note_id, ContextLabel.BACKLINK)] += references
@@ -179,9 +173,7 @@ class ContextExpander:
         )
         return tuple(candidates), diagnostics
 
-    def _nearby_history(
-        self, note_id: str, anchor: date, nearby_days: int
-    ) -> tuple[SearchResult, ...]:
+    def _nearby_history(self, note_id: str, anchor: date, nearby_days: int) -> tuple[SearchResult, ...]:
         start = (anchor - timedelta(days=nearby_days)).isoformat()
         end = (anchor + timedelta(days=nearby_days)).isoformat()
         results = self.retriever.search(
@@ -214,21 +206,3 @@ def _evidence_date(result: SearchResult) -> date | None:
 def _distance(result: SearchResult, anchor: date) -> int:
     value = _evidence_date(result)
     return abs((value - anchor).days) if value is not None else 10**9
-
-
-def _dedupe_diagnostics(
-    diagnostics: list[TraversalDiagnostic],
-) -> list[TraversalDiagnostic]:
-    seen: set[tuple[object, ...]] = set()
-    result: list[TraversalDiagnostic] = []
-    for diagnostic in diagnostics:
-        key = (
-            diagnostic.source_note_id,
-            diagnostic.target_text,
-            diagnostic.resolution,
-            diagnostic.line,
-        )
-        if key not in seen:
-            seen.add(key)
-            result.append(diagnostic)
-    return result

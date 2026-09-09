@@ -34,7 +34,6 @@ def result(
         entry_type=entry_type,
         mode=RetrievalMode.METADATA,
         text=f"evidence from {entry_id}",
-        excerpt=f"evidence from {entry_id}",
         heading=entry_id,
         heading_path=(entry_id,),
         start_line=1,
@@ -88,18 +87,14 @@ class FakeRetriever:
             return (
                 replace(
                     self.backlink,
-                    outgoing_links=(
-                        Link("Daily", "daily", resolution=LinkResolution.RESOLVED, line=2),
-                    ),
+                    outgoing_links=(Link("Daily", "daily", resolution=LinkResolution.RESOLVED, line=2),),
                 ),
             )
         if note_id == "project":
             return (self.source,)
         return ()
 
-    def search_within(
-        self, note_id: str, query: str, *, section: str | None = None, **_: object
-    ):
+    def search_within(self, note_id: str, query: str, *, section: str | None = None, **_: object):
         self.within_calls.append((note_id, section))
         return {
             "project": (self.project,),

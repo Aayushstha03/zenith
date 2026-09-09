@@ -7,7 +7,6 @@ from zenith.core.contracts import WarningType
 from zenith.parser.kanban import card_annotations
 from zenith.parser.service import VaultParser
 
-
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
 
@@ -21,7 +20,7 @@ def parse(vault: Path):
 
 def board(vault: Path, path: str):
     # The same card text can appear in more than one column, so key on both.
-    return {(entry.kanban.column, entry.text): entry for entry in parse(vault)[path].entries}
+    return {(entry.board.column, entry.text): entry for entry in parse(vault)[path].entries}
 
 
 def test_card_date_becomes_the_entry_date() -> None:
@@ -45,7 +44,9 @@ def test_the_daily_note_link_form_is_a_date_and_not_a_link() -> None:
 
 
 def test_a_real_wiki_link_on_a_card_still_resolves() -> None:
-    card = board(FIXTURE_VAULT, "kanban/Kitchen App.md")[("ToDo", "Fourth todo card with [[News Resolution]]")]
+    card = board(FIXTURE_VAULT, "kanban/Kitchen App.md")[
+        ("ToDo", "Fourth todo card with [[News Resolution]]")
+    ]
     assert [link.target_text for link in card.outgoing_links] == ["News Resolution"]
 
 
@@ -59,17 +60,15 @@ def test_plugin_syntax_never_reaches_searchable_text_or_the_embedding() -> None:
 
 def test_the_card_time_is_kept_as_structured_metadata() -> None:
     card = board(FIXTURE_VAULT, "kanban/Kitchen App.md")[("complete", "Finished kitchen setup")]
-    assert card.kanban.card_time == "14:30"
-    assert card.kanban.checked is True
+    assert card.board.card_time == "14:30"
+    assert card.board.checked is True
 
 
 def test_an_impossible_date_warns_and_dates_nothing() -> None:
     note = parse(FIXTURE_VAULT)["kanban/Kitchen App.md"]
     card = next(entry for entry in note.entries if entry.text == "Card with an impossible date")
     assert card.entry_date is None
-    assert any(
-        w.kind is WarningType.INVALID_DATE and "2026-02-30" in w.message for w in note.warnings
-    )
+    assert any(w.kind is WarningType.INVALID_DATE and "2026-02-30" in w.message for w in note.warnings)
 
 
 def test_the_entry_date_reaches_the_embedding_input() -> None:
@@ -98,8 +97,7 @@ def test_more_than_one_date_on_a_card_warns_and_takes_the_first(tmp_path: Path) 
     note = parse(tmp_path)["kanban/Two.md"]
     assert note.entries[0].entry_date == "2026-05-12"
     assert any(
-        w.kind is WarningType.INVALID_DATE and "more than one date" in w.message
-        for w in note.warnings
+        w.kind is WarningType.INVALID_DATE and "more than one date" in w.message for w in note.warnings
     )
 
 
@@ -138,4 +136,4 @@ def test_a_card_that_is_only_an_annotation_leaks_no_plugin_syntax(tmp_path: Path
             assert marker not in entry.text
             assert marker not in entry.embedding_text
     assert [entry.entry_date for entry in entries] == ["2026-05-12", None, "2026-06-06"]
-    assert entries[1].kanban.card_time == "14:30"
+    assert entries[1].board.card_time == "14:30"

@@ -15,6 +15,18 @@ docker compose up -d
 docker compose ps
 ```
 
+The image installs the project, and `compose.yaml` also binds `./src` over it
+at `/app/src`. `PYTHONPATH` in the Dockerfile puts the mount ahead of
+site-packages, so the containers run the working tree. Edit a file and the next
+`docker compose exec` runs the change with no rebuild. The two long-running
+processes hold their own code, so restart them after an edit:
+
+```bash
+docker compose restart zenith watch
+```
+
+Rebuild the image only when a dependency changes.
+
 Parse the mounted vault once or watch it recursively with debounced Watchdog
 events:
 
@@ -122,6 +134,7 @@ Representative CLI commands:
 docker compose exec zenith zenith index init
 docker compose exec zenith zenith search "fried chicken" --mode literal
 docker compose exec zenith zenith note get "News Resolution"
+docker compose exec zenith zenith note read "News Resolution"
 docker compose exec zenith zenith links backlinks NOTE_ID
 docker compose exec zenith zenith context ENTRY_ID
 docker compose exec zenith zenith warnings --type missing_link
@@ -136,6 +149,44 @@ ambiguous identifiers return a JSON error on stderr with a nonzero exit code.
 After model prefetch, the application health endpoint is available inside the
 Compose network and the Qdrant dashboard is available at
 <http://localhost:6333/dashboard>.
+
+## Asking questions
+
+`zenith ask` answers a question from the vault:
+
+```bash
+docker compose exec zenith zenith ask "what did I work on last week?"
+```
+
+The model reaches the notes only through five tools: search, whole-note read,
+context expansion, backlinks, and Kanban cards. It cannot write to the vault
+and it cannot export the graph. The result carries the answer, the trace of
+what the model actually looked at, and token usage, so an answer can be
+checked against its evidence.
+
+Every tool result carries a short id, `s1`, `s2`, `s3`, and the model cites
+that id rather than writing a citation of its own. An answer reads `You added
+an llm based parsing model. [s2]`, and the result's `citations` object resolves
+each cited id back to its note, heading, and line range. See
+[the CLI reference](docs/cli-reference.md) for the shape.
+
+The answering model is served by LM Studio on the host over its
+OpenAI-compatible API, and is configured through `ZENITH_LLM_BASE_URL`,
+`ZENITH_LLM_MODEL`, `ZENITH_LLM_API_KEY`, `ZENITH_LLM_TIMEOUT`, and
+`ZENITH_LLM_TEMPERATURE`. Enable "Serve on Local Network" in LM Studio so the
+container can reach it, and start its server: LM Studio does not start it with
+the application unless "Start server on launch" is on.
+
+The temperature is 0.0 by default, and is sent on every request, so a preset
+held by the LM Studio server does not apply to `zenith ask`.
+
+LM Studio is optional. Parsing, indexing, and the watcher all run with it
+closed, so the index never competes with a chat model for VRAM. `zenith health`
+reports LM Studio but never fails because of it, and the container liveness
+probe does not contact it at all.
+
+`zenith ask` refuses to answer when the index is not ready, rather than
+searching an unready index and reporting that the notes say nothing.
 
 Deployment settings are documented in `.env`. To use a real vault, set
 `ZENITH_VAULT_PATH` there to an absolute host path. The Compose mount remains

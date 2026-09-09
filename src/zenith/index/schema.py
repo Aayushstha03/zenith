@@ -1,4 +1,4 @@
-"""Versioned Qdrant collection schema."""
+"""Qdrant collection schema."""
 
 from __future__ import annotations
 
@@ -9,9 +9,8 @@ from uuid import uuid4
 from qdrant_client import models
 
 from zenith.core.config import Settings
+from zenith.index.qdrant import alias_target
 
-
-SCHEMA_VERSION = 5
 DENSE_VECTOR = "semantic"
 SPARSE_VECTOR = "text-bm25"
 
@@ -29,8 +28,9 @@ PAYLOAD_INDEXES: tuple[tuple[str, models.PayloadSchemaType], ...] = (
     ("entry_date", models.PayloadSchemaType.DATETIME),
     ("tags", models.PayloadSchemaType.KEYWORD),
     ("outgoing_note_ids", models.PayloadSchemaType.KEYWORD),
+    ("note_aliases", models.PayloadSchemaType.KEYWORD),
+    ("outgoing_link_keys", models.PayloadSchemaType.KEYWORD),
     ("text", models.PayloadSchemaType.TEXT),
-    ("board.name", models.PayloadSchemaType.KEYWORD),
     ("board.column", models.PayloadSchemaType.KEYWORD),
     ("board.status", models.PayloadSchemaType.KEYWORD),
     ("board.checked", models.PayloadSchemaType.BOOL),
@@ -71,14 +71,7 @@ class IndexInitReport:
 
 
 def initialize_index(settings: Settings, client: Any) -> IndexInitReport:
-    target = next(
-        (
-            alias.collection_name
-            for alias in client.get_aliases().aliases
-            if alias.alias_name == settings.collection_name
-        ),
-        None,
-    )
+    target = alias_target(client, settings.collection_name)
     if target is not None:
         return IndexInitReport(settings.collection_name, target, False)
 

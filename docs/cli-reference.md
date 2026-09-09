@@ -7,6 +7,11 @@ use the complete invocation:
 docker compose exec zenith zenith COMMAND
 ```
 
+The container runs the working tree, which `compose.yaml` binds at `/app/src`,
+so a command reflects an edit without a rebuild. `zenith serve` and
+`zenith watch` are already running and keep their own code until
+`docker compose restart zenith watch`.
+
 All normal command results are deterministic, pretty-printed JSON. Property
 names are sorted so unchanged commands are easy to diff.
 
@@ -50,7 +55,6 @@ object:
   "entry_type": "project_update",
   "mode": "lexical",
   "text": "Original searchable text",
-  "excerpt": "Original searchable text",
   "heading": "2026-08-19",
   "heading_path": ["News Resolution", "2026-08-19"],
   "start_line": 3,
@@ -61,7 +65,7 @@ object:
   "outgoing_links": [],
   "score": 7.3312263,
   "verified": null,
-  "kanban": null
+  "board": null
 }
 ```
 
@@ -96,7 +100,6 @@ Kanban cards include:
 
 ```json
 {
-  "name": "Kitchen App",
   "column": "ToDo",
   "status": "todo",
   "column_position": 0,
@@ -131,18 +134,33 @@ docker compose exec zenith zenith health
 ```
 
 Checks configuration, Qdrant connectivity, active-index compatibility, pinned
-model readiness, and the vault mount.
+model readiness, the vault mount, and LM Studio.
+
+The `llm` block reports the answering model and is marked `"required": false`.
+It never changes the top-level `ready` flag and never changes the exit code. A
+closed LM Studio is a normal state: parsing, indexing, and the watcher run
+without it, so the index never competes for VRAM.
+
+The container liveness endpoint at `/healthz` omits the `llm` block entirely.
+Container health must not depend on a desktop application, or spend its timeout
+budget waiting for one.
 
 ```json
 {
   "configuration": {"errors": [], "ready": true},
+  "llm": {
+    "available_models": ["google/gemma-4-e4b"],
+    "base_url": "http://host.docker.internal:1234/v1",
+    "model": "google/gemma-4-e4b",
+    "ready": true,
+    "required": false
+  },
   "index": {
     "collection": "zenith_entries",
     "errors": [],
     "physical_collection": "zenith_entries__build_...",
     "points": 38,
-    "ready": true,
-    "schema_versions": [4]
+    "ready": true
   },
   "models": {"ready": true},
   "qdrant": {"ready": true, "status": 200},
@@ -162,7 +180,7 @@ Returns both the complete health report and focused index inspection:
 ```json
 {
   "health": {"ready": true},
-  "index": {"ready": true, "points": 38, "schema_versions": [4]}
+  "index": {"ready": true, "points": 38}
 }
 ```
 
@@ -385,6 +403,115 @@ stem. Ambiguous titles or stems return exit code `2` rather than guessing.
 }
 ```
 
+### `ask QUESTION`
+
+```bash
+docker compose exec zenith zenith ask "what did I work on last week?"
+docker compose exec zenith zenith ask "..." --model lfm2.5-8b-a1b
+```
+
+Answers a question from the vault. The model reaches the notes only through
+the five tools in `zenith.agent`: search, whole-note read, context expansion,
+backlinks, and Kanban cards. It cannot write, and it cannot export the graph.
+
+The model does not write citations. Every result a tool returns carries a
+short `id`, `s1`, `s2`, `s3`, and the model cites the id. The answer therefore
+reads `You added an llm based parsing model. [s2]`, and the `citations` object
+resolves each cited id to the note, heading, and line range behind it:
+
+```json
+{
+  "answer": "You added an llm based parsing model. [s2]",
+  "citations": {
+    "s2": {
+      "note": "News Resolution",
+      "path": "projects/News Resolution.md",
+      "heading": "2026-08-17",
+      "lines": "6-9"
+    }
+  }
+}
+```
+
+Ids are issued per question and count from `s1` each time; they mean nothing
+outside the answer built from them. One entry reached twice keeps one id. A
+note read whole through `read_note` gets an id too, and resolves to the note
+without a line range, because there is no one range to claim. An id the run
+never issued resolves to `{"unknown": true}`, so an answer citing evidence
+that does not exist does not read like one citing evidence that does.
+
+`--model` overrides `ZENITH_LLM_MODEL` for one question, which is how to
+compare two loaded models without editing the environment.
+
+The command checks the index first, then LM Studio, before it builds the agent.
+An unready index returns exit code `1` rather than letting the model search it,
+find nothing, and report that the notes say nothing. An unreachable LM Studio,
+or one serving a different model, also returns exit code `1` and says what to
+fix rather than failing part-way through a run.
+
+One answer waits `ZENITH_LLM_TIMEOUT` seconds, 120 by default. The OpenAI
+client would otherwise wait 600 seconds and retry twice, which reads as a hung
+command.
+
+`ZENITH_LLM_TEMPERATURE` sets the sampling temperature, 0.0 to 2.0, and 0.0 by
+default. The value goes out with every request, so it decides the sampling
+rather than any preset held by the LM Studio server. Raising it loosens the
+citation and grounding rules the instructions depend on, so raise it only to
+compare answers, never to make them better.
+
+Temperature 0.0 makes an answer repeatable, not deterministic. A
+mixture-of-experts model served by LM Studio was measured giving two different
+answers over six runs of one question, on a byte-identical prompt. Do not build
+anything on two runs agreeing.
+
+`tool_calls` lists what the model actually looked at, in order. An answer is
+only as good as the evidence behind it, so the trace is part of the result
+rather than a debugging extra. Pipe the answer alone with `jq -r .answer`.
+
+```json
+{
+  "answer": "You traced the pipeline flow on 2026-08-17 ...",
+  "model": "google/gemma-4-e4b",
+  "question": "what did I work on last week?",
+  "tool_calls": [
+    {"arguments": {"query": "pipeline", "limit": 5}, "tool": "search_notes"}
+  ],
+  "usage": {
+    "input_tokens": 2841,
+    "output_tokens": 173,
+    "requests": 3,
+    "tool_calls": 1
+  }
+}
+```
+
+A run that spins without answering stops at the usage limits and returns exit
+code `1`.
+
+### `note read PATH_OR_TITLE`
+
+```bash
+docker compose exec zenith zenith note read "News Resolution"
+```
+
+Returns the complete Markdown file, including frontmatter, code, and URLs.
+Accepts the same identifiers as `note get`, and reports the same exit code `2`
+for an ambiguous or missing note.
+
+Use `note get` to see how a note was indexed, and `note read` to see what the
+note actually says. Indexed entries carry cleaned prose split to fit the dense
+model; this command carries the file.
+
+```json
+{
+  "content": "# News Resolution\n",
+  "note_id": "uuid",
+  "note_type": "standard",
+  "path": "projects/News Resolution.md",
+  "title": "News Resolution"
+}
+```
+
 ### `entry get ENTRY_ID`
 
 ```bash
@@ -516,8 +643,8 @@ resolution; this command does not mutate the index.
 docker compose exec zenith zenith kanban list
 ```
 
-Returns `{"boards": [{"name": "Board", "cards": []}]}`. Each board has `note_id`, `path`,
-`name`, ordered `columns`, and ordered `cards`.
+Returns `{"boards": [{"title": "Board", "cards": []}]}`. Each board has `note_id`, `path`,
+`title`, ordered `columns`, and ordered `cards`.
 
 ### `kanban get BOARD_OR_PATH`
 
@@ -628,6 +755,7 @@ api = Zenith(Settings.from_env())
 | `reindex(paths=None, full=False)` | `index update` / `index rebuild` |
 | `find_entries(...)` | `search` |
 | `get_note(path_or_title)` | `note get` |
+| `read_note(path_or_title)` | `note read` |
 | `get_entry(entry_id)` | `entry get` |
 | `get_outgoing_links(note_id, entry_id=None)` | `links outgoing` |
 | `get_backlinks(note_id)` | `links backlinks` |

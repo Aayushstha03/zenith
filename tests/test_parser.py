@@ -5,7 +5,6 @@ from zenith.core.config import Settings
 from zenith.core.contracts import EntryType, NoteType, WarningType
 from zenith.parser.service import VaultParser
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 VAULT = FIXTURES / "vault"
 
@@ -37,7 +36,7 @@ def summary(note):
         data["tags"] = [list(entry.tags) for entry in note.entries]
     elif note.note_type is NoteType.KANBAN:
         data["columns"] = note.metadata["columns"]
-        data["checked"] = [entry.kanban.checked for entry in note.entries]
+        data["checked"] = [entry.board.checked for entry in note.entries]
     else:
         data["dates"] = [entry.entry_date for entry in note.entries]
     return data
@@ -47,6 +46,23 @@ def test_documented_shapes_match_golden_summary() -> None:
     expected = json.loads((FIXTURES / "expected" / "parser_summary.json").read_text())
     notes = by_path(list(expected))
     assert {path: summary(note) for path, note in notes.items()} == expected
+
+
+def test_a_daily_note_outside_the_log_root_is_still_dated() -> None:
+    """`Daily/2026-08-20.md` is byte-identical to `logs/2026-08-20.md`.
+
+    Only the directory differs. A vault keeps daily notes in more than one
+    place, and a note the parser leaves undated reaches the answering model as
+    a result titled `2026-08-20` that claims to carry no date.
+    """
+    note = by_path(["Daily/2026-08-20.md"])["Daily/2026-08-20.md"]
+
+    assert note.note_type is NoteType.LOG
+    assert [entry.note_date for entry in note.entries] == ["2026-08-20"] * 3
+    assert [entry.heading for entry in note.entries] == ["Work", "Thoughts", "Meals"]
+    # The same file under the log root parses to the same thing.
+    logged = by_path(["logs/2026-08-20.md"])["logs/2026-08-20.md"]
+    assert summary(note) == summary(logged)
 
 
 def test_standard_note_mixes_dated_and_undated_entries() -> None:
@@ -69,6 +85,9 @@ def test_tags_and_links_come_only_from_eligible_prose() -> None:
         "Does Not Exist",
         "Shared",
     ]
+    # Each link reports the line it is written on. They share one paragraph, so
+    # a link used to inherit the line of the first prose in its section.
+    assert [link.line for link in links] == [20, 21, 22]
     text = "\n".join(item.text for item in note.entries)
     assert "Not a link" not in text
     assert "Still not a link" not in text
@@ -99,10 +118,10 @@ def test_kanban_preserves_state_order_nested_content_and_settings() -> None:
     assert "Preserve this nested detail" in kitchen.entries[1].text
     assert "kanban-plugin" not in "\n".join(entry.text for entry in kitchen.entries)
     inconsistent = notes["kanban/Inconsistent.md"]
-    assert inconsistent.entries[0].kanban.checked is True
-    assert inconsistent.entries[0].kanban.status == "doing"
-    assert inconsistent.entries[1].kanban.checked is False
-    assert inconsistent.entries[1].kanban.status == "complete"
+    assert inconsistent.entries[0].board.checked is True
+    assert inconsistent.entries[0].board.status == "doing"
+    assert inconsistent.entries[1].board.checked is False
+    assert inconsistent.entries[1].board.status == "complete"
     assert any(warning.kind is WarningType.INVALID_KANBAN_SETTINGS for warning in inconsistent.warnings)
 
 

@@ -20,7 +20,6 @@ from zenith.core.contracts import (
     WarningType,
 )
 from zenith.core.identity import entry_id
-from zenith.parser.tokens import estimate_tokens
 from zenith.parser.markdown import (
     Frontmatter,
     Heading,
@@ -28,7 +27,7 @@ from zenith.parser.markdown import (
     prose_between,
     valid_iso_date,
 )
-
+from zenith.parser.tokens import estimate_tokens
 
 CARD_RE = re.compile(r"^- \[([ xX])\]\s+(.*)$")
 # Obsidian Kanban writes card dates and times behind configurable triggers.
@@ -74,7 +73,9 @@ def card_annotations(
     for kind, trigger in sorted(
         (("time", time_trigger), ("date", date_trigger)), key=lambda item: -len(item[1])
     ):
-        def take(match: re.Match[str]) -> str:
+        # `kind` is bound as a default so the closure reads what this iteration
+        # is stripping, not whatever the loop variable holds later.
+        def take(match: re.Match[str], kind: str = kind) -> str:
             nonlocal date, time
             raw = (match.group(1) if match.group(1) is not None else match.group(2) or "").strip()
             consumed.append(raw)
@@ -98,13 +99,13 @@ def card_annotations(
 
         text = _annotation_re(trigger).sub(take, text)
 
-    if len({value for value in seen_dates}) > 1:
+    unique_dates = sorted(set(seen_dates))
+    if len(unique_dates) > 1:
         warnings.append(
             IndexWarning(
                 WarningType.INVALID_DATE,
                 path,
-                f"Kanban card carries more than one date: {', '.join(sorted(set(seen_dates)))}; "
-                f"using {date}",
+                f"Kanban card carries more than one date: {', '.join(unique_dates)}; using {date}",
                 line,
             )
         )
@@ -116,23 +117,36 @@ def canonical_status(column: str) -> str | None:
     return next((status for status, aliases in STATUS_ALIASES.items() if normalized in aliases), None)
 
 
-def parse_settings(lines: list[str], path: str) -> tuple[dict[str, Any] | None, IndexWarning | None, int | None]:
-    start = next((index for index, line in enumerate(lines) if SETTINGS_START_RE.fullmatch(line.strip())), None)
+def parse_settings(
+    lines: list[str], path: str
+) -> tuple[dict[str, Any] | None, IndexWarning | None, int | None]:
+    start = next(
+        (index for index, line in enumerate(lines) if SETTINGS_START_RE.fullmatch(line.strip())), None
+    )
     if start is None:
         return None, None, None
-    fence_start = next((index for index in range(start + 1, len(lines)) if lines[index].strip() == "```json"), None)
+    fence_start = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].strip() == "```json"), None
+    )
     fence_end = (
         next((index for index in range(fence_start + 1, len(lines)) if lines[index].strip() == "```"), None)
         if fence_start is not None
         else None
     )
     if fence_start is None or fence_end is None:
-        warning = IndexWarning(WarningType.INVALID_KANBAN_SETTINGS, path, "Kanban settings block is incomplete", start + 1)
+        warning = IndexWarning(
+            WarningType.INVALID_KANBAN_SETTINGS, path, "Kanban settings block is incomplete", start + 1
+        )
         return None, warning, start
     try:
         value = json.loads("\n".join(lines[fence_start + 1 : fence_end]))
     except json.JSONDecodeError as exc:
-        warning = IndexWarning(WarningType.INVALID_KANBAN_SETTINGS, path, f"invalid Kanban settings JSON: {exc.msg}", fence_start + 2)
+        warning = IndexWarning(
+            WarningType.INVALID_KANBAN_SETTINGS,
+            path,
+            f"invalid Kanban settings JSON: {exc.msg}",
+            fence_start + 2,
+        )
         return None, warning, start
     return value, None, start
 
@@ -150,7 +164,11 @@ def parse_kanban_entries(
 ) -> tuple[tuple[ParsedEntry, ...], tuple[IndexWarning, ...], dict[str, Any]]:
     warnings: list[IndexWarning] = []
     if frontmatter.values.get("kanban-plugin") != "board":
-        warnings.append(IndexWarning(WarningType.MISSING_KANBAN_MARKER, path, "Kanban note is missing `kanban-plugin: board`"))
+        warnings.append(
+            IndexWarning(
+                WarningType.MISSING_KANBAN_MARKER, path, "Kanban note is missing `kanban-plugin: board`"
+            )
+        )
     plugin_settings, settings_warning, settings_start = parse_settings(lines, path)
     if settings_warning:
         warnings.append(settings_warning)
@@ -161,6 +179,7 @@ def parse_kanban_entries(
     columns = [heading for heading in parsed_headings if heading.level == 2]
     entries: list[ParsedEntry] = []
     for column_position, column in enumerate(columns):
+        status = canonical_status(column.text)
         column_start = column.content_start
         column_end = column.content_end
         if settings_start is not None:
@@ -203,7 +222,7 @@ def parse_kanban_entries(
                     embedding_text=(
                         f"Board: {title}\nColumn: {column.text}\n"
                         + (f"Date: {card_date}\n" if card_date else "")
-                        + f"Status: {canonical_status(column.text) or 'custom'}\nTask: {visible}"
+                        + f"Status: {status or 'custom'}\nTask: {visible}"
                     ),
                     heading=column.text,
                     heading_path=column.path,
@@ -213,10 +232,9 @@ def parse_kanban_entries(
                     outgoing_links=links,
                     web_links=prose.web_links,
                     content_hash=hashlib.sha256(visible.encode("utf-8")).hexdigest(),
-                    kanban=KanbanData(
-                        name=title,
+                    board=KanbanData(
                         column=column.text,
-                        status=canonical_status(column.text),
+                        status=status,
                         column_position=column_position,
                         card_position=card_position,
                         checked=match.group(1).casefold() == "x",

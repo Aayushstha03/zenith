@@ -23,7 +23,6 @@ from __future__ import annotations
 import math
 import re
 
-
 # WordPiece splits on script and punctuation boundaries before subwords, so
 # count runs of letters and digits separately from standalone symbols.
 _PIECE_RE = re.compile(r"[^\W\d_]+|\d+|[^\s\w]", re.UNICODE)

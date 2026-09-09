@@ -5,7 +5,6 @@ from zenith.core.contracts import LinkResolution, WarningType
 from zenith.index.links import resolve_link, resolve_links
 from zenith.parser.service import VaultParser
 
-
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
 
@@ -37,9 +36,7 @@ def test_frontmatter_alias_and_explicit_path_resolve(tmp_path: Path) -> None:
     (tmp_path / "projects" / "Target.md").write_text(
         "---\naliases: [Short Name]\n---\n# Long Target\n\nBody.\n"
     )
-    (tmp_path / "Source.md").write_text(
-        "# Source\n\n[[Short Name]] and [[projects/Target.md]].\n"
-    )
+    (tmp_path / "Source.md").write_text("# Source\n\n[[Short Name]] and [[projects/Target.md]].\n")
     notes = resolve_links(VaultParser(settings(tmp_path)).parse_vault())
     source = next(note for note in notes if note.path == "Source.md")
     links = source.entries[0].outgoing_links

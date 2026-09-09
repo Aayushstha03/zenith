@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 import hashlib
+from collections import defaultdict
 from pathlib import Path
 
 from zenith.core.config import Settings
@@ -25,14 +25,13 @@ from zenith.parser.markdown import (
     Prose,
     headings,
     markdown_tokens,
+    meaningful_line_range,
     note_title,
     parse_frontmatter,
     prose_between,
-    meaningful_line_range,
     valid_iso_date,
 )
 from zenith.parser.tokens import content_budget, estimate_tokens
-
 
 PARSER_VERSION = "3.1.1"
 
@@ -54,7 +53,7 @@ class VaultParser:
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         note_uuid = str(note_id(self.vault_id, relative))
         note_type = classify_path(relative, self.settings)
-        frontmatter = parse_frontmatter(content)
+        frontmatter = parse_frontmatter(content, relative)
         tokens = markdown_tokens(content)
         parsed_headings = tuple(
             heading for heading in headings(tokens, len(lines)) if heading.line > frontmatter.body_start
@@ -62,7 +61,7 @@ class VaultParser:
         title = note_title(frontmatter, parsed_headings, resolved.stem)
         warnings: list[IndexWarning] = []
         if frontmatter.warning:
-            warnings.append(IndexWarning(WarningType.PARSER_FAILURE, relative, frontmatter.warning, 1))
+            warnings.append(frontmatter.warning)
 
         metadata = dict(frontmatter.values)
         if note_type is NoteType.KANBAN:
@@ -79,7 +78,11 @@ class VaultParser:
             metadata.update(kanban_metadata)
             warnings.extend(kanban_warnings)
         else:
-            note_date = self._log_date(resolved.stem, lines, frontmatter.body_start) if note_type is NoteType.LOG else None
+            note_date = (
+                self._log_date(resolved.stem, lines, frontmatter.body_start)
+                if note_type is NoteType.LOG
+                else None
+            )
             entries, entry_warnings = self._parse_open_entries(
                 note_type=note_type,
                 note_date=note_date,
@@ -90,11 +93,12 @@ class VaultParser:
                 relative=relative,
                 title=title,
                 note_uuid=note_uuid,
-                content_hash=content_hash,
             )
             warnings.extend(entry_warnings)
             if note_type is NoteType.LOG and note_date is None:
-                warnings.append(IndexWarning(WarningType.INVALID_DATE, relative, "log note has no valid date"))
+                warnings.append(
+                    IndexWarning(WarningType.INVALID_DATE, relative, "log note has no valid date")
+                )
 
         return ParsedNote(
             note_id=note_uuid,
@@ -103,7 +107,7 @@ class VaultParser:
             note_type=note_type,
             content_hash=content_hash,
             entries=entries,
-            warnings=tuple(_dedupe_warnings(warnings)),
+            warnings=tuple(dict.fromkeys(warnings)),
             metadata=metadata,
         )
 
@@ -126,7 +130,6 @@ class VaultParser:
         relative: str,
         title: str,
         note_uuid: str,
-        content_hash: str,
     ) -> tuple[tuple[ParsedEntry, ...], tuple[IndexWarning, ...]]:
         entries: list[ParsedEntry] = []
         warnings: list[IndexWarning] = []
@@ -136,22 +139,41 @@ class VaultParser:
 
         loose_start = body_start
         if note_type is NoteType.LOG and note_date:
-            first_nonempty = next((index for index in range(body_start, first_heading_zero) if lines[index].strip()), None)
+            first_nonempty = next(
+                (index for index in range(body_start, first_heading_zero) if lines[index].strip()), None
+            )
             if first_nonempty is not None and valid_iso_date(lines[first_nonempty].strip()) == note_date:
                 loose_start = first_nonempty + 1
 
         preamble_type = EntryType.DAILY_SECTION if note_type is NoteType.LOG else EntryType.FREEFORM_CHUNK
         for chunk, prose in self._chunks(
-            tokens=tokens, lines=lines, start_zero=loose_start, end_zero=first_heading_zero,
-            relative=relative, title=title, heading=None, note_type=note_type,
-            note_date=note_date, entry_date=None, warnings=warnings,
+            tokens=tokens,
+            lines=lines,
+            start_zero=loose_start,
+            end_zero=first_heading_zero,
+            relative=relative,
+            title=title,
+            heading=None,
+            note_type=note_type,
+            note_date=note_date,
+            entry_date=None,
+            warnings=warnings,
         ):
             body_range = meaningful_line_range(lines, chunk.start_zero, chunk.end_zero)
             entries.append(
                 self._entry(
-                    note_uuid, relative, title, note_type, preamble_type, prose.text, None, (),
+                    note_uuid,
+                    relative,
+                    title,
+                    note_type,
+                    preamble_type,
+                    prose.text,
+                    None,
+                    (),
                     body_range or SourceRange(chunk.start_zero + 1, chunk.end_zero),
-                    note_date, None, prose,
+                    note_date,
+                    None,
+                    prose,
                     _unique_key(f"preamble:{_digest(prose.text)}", duplicates),
                 )
             )
@@ -169,10 +191,17 @@ class VaultParser:
                 entry_date = None
 
             pieces = self._chunks(
-                tokens=tokens, lines=lines, start_zero=heading.content_start,
-                end_zero=heading.content_end, relative=relative, title=title,
-                heading=heading.text, note_type=note_type, note_date=note_date,
-                entry_date=entry_date, warnings=warnings,
+                tokens=tokens,
+                lines=lines,
+                start_zero=heading.content_start,
+                end_zero=heading.content_end,
+                relative=relative,
+                title=title,
+                heading=heading.text,
+                note_type=note_type,
+                note_date=note_date,
+                entry_date=entry_date,
+                warnings=warnings,
             )
             if not pieces:
                 continue
@@ -194,9 +223,19 @@ class VaultParser:
                 )
                 entries.append(
                     self._entry(
-                        note_uuid, relative, title, note_type, entry_type, prose.text, heading.text,
-                        heading.path, SourceRange(start_line, end_line),
-                        note_date, entry_date, prose, structural_key,
+                        note_uuid,
+                        relative,
+                        title,
+                        note_type,
+                        entry_type,
+                        prose.text,
+                        heading.text,
+                        heading.path,
+                        SourceRange(start_line, end_line),
+                        note_date,
+                        entry_date,
+                        prose,
+                        structural_key,
                     )
                 )
                 warnings.extend(prose.warnings)
@@ -278,7 +317,9 @@ class VaultParser:
             note_type=note_type,
             entry_type=entry_type,
             text=text,
-            embedding_text=_embedding_text(note_type, title, heading, note_date, entry_date, prose.tags, text),
+            embedding_text=_embedding_text(
+                note_type, title, heading, note_date, entry_date, prose.tags, text
+            ),
             heading=heading,
             heading_path=heading_path,
             source=source,
@@ -299,17 +340,6 @@ def _unique_key(key: str, duplicates: defaultdict[str, int]) -> str:
     """Keep identical text in one note distinct without depending on position."""
     duplicates[key] += 1
     return f"{key}:{duplicates[key]}"
-
-
-def _dedupe_warnings(warnings: list[IndexWarning]) -> list[IndexWarning]:
-    result: list[IndexWarning] = []
-    seen: set[tuple[object, ...]] = set()
-    for warning in warnings:
-        key = (warning.kind, warning.path, warning.message, warning.line)
-        if key not in seen:
-            seen.add(key)
-            result.append(warning)
-    return result
 
 
 def _embedding_text(

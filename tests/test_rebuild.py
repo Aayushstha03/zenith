@@ -9,10 +9,7 @@ from zenith.index.rebuild import IndexRebuilder
 
 class Encoders:
     def encode(self, texts: list[str]):
-        return [
-            {"semantic": [0.0] * 384, "text-bm25": {"indices": [1], "values": [1.0]}}
-            for _ in texts
-        ]
+        return [{"semantic": [0.0] * 384, "text-bm25": {"indices": [1], "values": [1.0]}} for _ in texts]
 
 
 class Client:
@@ -57,6 +54,26 @@ def settings(vault: Path) -> Settings:
     return Settings("http://qdrant:6333", vault, vault / "models", "entries", "127.0.0.1", 8080)
 
 
+def test_rebuild_drops_the_collection_the_alias_left_behind() -> None:
+    vault = Path(__file__).parent / "fixtures" / "vault"
+    client = Client()
+    client.collections.add("entries__old")
+
+    IndexRebuilder(settings(vault), client=client, encoders=Encoders()).rebuild()
+
+    assert client.deleted == ["entries__old"]
+    assert "entries__old" not in client.collections
+
+
+def test_first_rebuild_has_no_previous_collection_to_drop() -> None:
+    vault = Path(__file__).parent / "fixtures" / "vault"
+    client = Client(previous=None)
+
+    IndexRebuilder(settings(vault), client=client, encoders=Encoders()).rebuild()
+
+    assert client.deleted == []
+
+
 def test_rebuild_validates_points_then_atomically_switches_alias() -> None:
     vault = Path(__file__).parent / "fixtures" / "vault"
     client = Client()
@@ -66,9 +83,12 @@ def test_rebuild_validates_points_then_atomically_switches_alias() -> None:
     assert report.previous_collection == "entries__old"
     assert len(client.alias_operations) == 2
     payload = client.points[0].payload
-    assert payload["schema_version"] == 5
-    assert payload["parser_version"] == "3.1.1"
-    assert payload["embedding_input_version"] == "3"
+    # One digest now stands in for the parser, model, encoder, tokenizer, and
+    # embedding-input versions. Assert it is a real digest and that it tells
+    # two different entries apart, which is all `_embedding_compatible` asks.
+    fingerprints = {point.payload["embedding_fingerprint"] for point in client.points}
+    assert all(len(value) == 64 for value in fingerprints)
+    assert len(fingerprints) > 1
     assert payload["start_line"] >= 1
 
 

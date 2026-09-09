@@ -3,24 +3,24 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
+from dataclasses import asdict, replace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event
 from typing import Any, TextIO
 
 from qdrant_client import QdrantClient
 
 from zenith.core.config import Settings
-from zenith.core.contracts import EntryType, RetrievalMode, WarningType
+from zenith.core.contracts import QUERY_TEXT_FIELDS, EntryType, RetrievalMode, WarningType
 from zenith.index.diagnostics import inspect_collection
 from zenith.index.incremental import IncrementalIndexer
 from zenith.index.schema import initialize_index
 from zenith.library import Zenith
 from zenith.parser.service import VaultParser
 from zenith.parser.watcher import VaultWatcher
-from zenith.runtime.health import encode_report, health_report
+from zenith.runtime.health import encode_report, health_report, llm_health
 from zenith.runtime.models import prefetch, readiness
 
 
@@ -35,7 +35,7 @@ def _print(data: object, *, file: TextIO | None = None) -> None:
 
 def _handler(settings: Settings) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             if self.path not in {"/health", "/healthz"}:
                 self.send_error(404)
                 return
@@ -82,10 +82,16 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--mode", choices=_values(RetrievalMode), default="hybrid")
     _add_entry_filters(search)
 
+    ask = commands.add_parser("ask", help="answer a question from the notes vault")
+    ask.add_argument("question")
+    ask.add_argument("--model", default=None, help="override ZENITH_LLM_MODEL for this question")
+
     note = commands.add_parser("note", help="retrieve notes")
     note_commands = note.add_subparsers(dest="note_command", required=True)
     note_get = note_commands.add_parser("get")
     note_get.add_argument("path_or_title")
+    note_read = note_commands.add_parser("read", help="read one complete note as Markdown")
+    note_read.add_argument("path_or_title")
 
     entry = commands.add_parser("entry", help="retrieve entries")
     entry_commands = entry.add_subparsers(dest="entry_command", required=True)
@@ -173,11 +179,14 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         server.serve_forever()
         return 0
     if args.command == "health":
-        report = health_report(settings)
+        report = health_report(settings, include_llm=True)
         _print(report)
         return 0 if report["ready"] else 1
     if args.command == "diagnose":
-        report = {"health": health_report(settings), "index": inspect_collection(settings)}
+        report = {
+            "health": health_report(settings, include_llm=True),
+            "index": inspect_collection(settings),
+        }
         _print(report)
         return 0 if report["health"]["ready"] and report["index"]["ready"] else 1
     if args.command == "parse":
@@ -190,8 +199,17 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         def changed(paths: tuple[str, ...]) -> None:
             _print(indexer.reindex(list(paths)).to_dict())
 
+        def failed(error: BaseException) -> None:
+            _print(
+                {"error": {"message": str(error), "type": type(error).__name__}},
+                file=sys.stderr,
+            )
+
         try:
-            with VaultWatcher(settings, changed):
+            with VaultWatcher(settings, changed, on_error=failed) as watcher:
+                # Index once before waiting, so edits made while the watcher
+                # was down are not stranded until the next manual update.
+                watcher.catch_up()
                 Event().wait()
         except KeyboardInterrupt:
             return 0
@@ -215,6 +233,8 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         return 0 if report.get("ready", True) else 1
 
     api = Zenith(settings)
+    if args.command == "ask":
+        return _ask(args, settings, api)
     if args.command == "search":
         mode = RetrievalMode(args.mode)
         texts = _query_texts(mode, args.query)
@@ -232,7 +252,10 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
         )
         _print({"results": [result.to_dict() for result in results]})
     elif args.command == "note":
-        _print(api.get_note(args.path_or_title).to_dict())
+        if args.note_command == "read":
+            _print(api.read_note(args.path_or_title).to_dict())
+        else:
+            _print(api.get_note(args.path_or_title).to_dict())
     elif args.command == "entry":
         _print(api.get_entry(args.entry_id).to_dict())
     elif args.command == "links":
@@ -292,18 +315,105 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _ask(args: argparse.Namespace, settings: Settings, api: Zenith) -> int:
+    # Imported here, not at module scope: pulling in the agent stack costs
+    # more than a second, and every other command would pay it for nothing.
+    from zenith.agent import DEFAULT_LIMITS, Sources, build_agent
+
+    if args.model:
+        settings = replace(settings, llm_model=args.model)
+
+    # Check the index before the model. A model that searches an unready index
+    # finds nothing and reports, confidently, that the notes say nothing. That
+    # failure is worse than refusing, because it looks like an answer.
+    report = health_report(settings)
+    if not report["ready"]:
+        _print(
+            {
+                "error": {
+                    "message": (
+                        "the vault index is not ready to answer questions; "
+                        "run `zenith diagnose` for the failing dependency"
+                    ),
+                    "type": "IndexUnavailable",
+                },
+                "health": report,
+            },
+            file=sys.stderr,
+        )
+        return 1
+
+    status = llm_health(settings)
+    if not status["ready"]:
+        _print(
+            {
+                "error": {
+                    "message": (
+                        f"LM Studio is not serving {settings.llm_model!r} at "
+                        f"{settings.llm_base_url}. Start LM Studio, load the model, "
+                        "and enable Serve on Local Network."
+                    ),
+                    "type": "LLMUnavailable",
+                },
+                "llm": status,
+            },
+            file=sys.stderr,
+        )
+        return 1
+
+    # One ledger per question. The model cites `s1`, `s2`; the ledger is what
+    # turns those back into a note, a heading, and a line range for the reader.
+    sources = Sources(api)
+    result = build_agent(settings).run_sync(args.question, deps=sources, usage_limits=DEFAULT_LIMITS)
+    _print(
+        {
+            "answer": result.output,
+            "citations": sources.cited(result.output),
+            "model": settings.llm_model,
+            "question": args.question,
+            "tool_calls": _tool_calls(result),
+            "usage": _usage(result),
+        }
+    )
+    return 0
+
+
+def _tool_calls(result: object) -> list[dict[str, object]]:
+    """List what the model actually looked at, in order.
+
+    A local model's answer is only as good as the evidence it retrieved, so
+    the trace is part of the result rather than a debugging extra.
+    """
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+
+    return [
+        {"arguments": part.args_as_dict(), "tool": part.tool_name}
+        for message in result.all_messages()
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    ]
+
+
+def _usage(result: object) -> dict[str, int | None]:
+    usage = result.usage
+    return {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "requests": usage.requests,
+        "tool_calls": usage.tool_calls,
+    }
+
+
 def _query_texts(mode: RetrievalMode, query: str | None) -> dict[str, str | None]:
-    if mode is RetrievalMode.METADATA:
+    fields = QUERY_TEXT_FIELDS[mode]
+    if not fields:
         return {}
     if not query:
         raise ValueError(f"{mode.value} mode requires query text")
-    if mode is RetrievalMode.LITERAL:
-        return {"exact_text": query}
-    if mode is RetrievalMode.LEXICAL:
-        return {"lexical_text": query}
-    if mode is RetrievalMode.SEMANTIC:
-        return {"semantic_text": query}
-    return {"lexical_text": query, "semantic_text": query}
+    # `find_entries` calls the literal field `exact_text`; a plan calls it
+    # `literal_text`. Every other name is shared.
+    return {("exact_text" if field == "literal_text" else field): query for field in fields}
 
 
 def _optional_bool(value: str | None) -> bool | None:

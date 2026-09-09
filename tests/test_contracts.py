@@ -29,10 +29,6 @@ def test_query_plan_enforces_traversal_budget() -> None:
 
 def test_payload_serializes_enums_tuples_and_nested_contracts() -> None:
     payload = QdrantPayload(
-        schema_version=1,
-        parser_version="1.0.0",
-        embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-        sparse_model="Qdrant/bm25",
         vault_id="personal",
         note_id="note",
         entry_id="entry",
@@ -53,6 +49,7 @@ def test_payload_serializes_enums_tuples_and_nested_contracts() -> None:
         web_links=(),
         content_hash="sha256",
         modified_at="2026-08-20T00:00:00+00:00",
+        embedding_fingerprint="deadbeef",
     ).to_dict()
 
     assert payload["note_type"] == "standard"

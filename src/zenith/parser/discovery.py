@@ -7,15 +7,29 @@ from pathlib import Path
 from zenith.core.config import Settings
 from zenith.core.contracts import NoteType
 from zenith.core.identity import normalize_vault_path
+from zenith.parser.markdown import valid_iso_date
 
 
 def classify_path(relative_path: str, settings: Settings) -> NoteType:
-    parts = Path(normalize_vault_path(relative_path)).parts
-    root = parts[0].casefold() if len(parts) > 1 else ""
-    if root == settings.log_root.casefold():
-        return NoteType.LOG
+    """Classify one note by where it sits, and by what it is called.
+
+    A note named for a day is a log wherever it sits. One configured root does
+    not describe a real vault: daily notes collect under `logs/`, under an
+    archive, under a per-client folder. A note left standard is a note the
+    parser never dates, and the answering model is then handed a result whose
+    title reads `2026-08-20` next to a claim that the entry has no date. It
+    resolves that contradiction by reading the date off the title, which is
+    exactly the guess the dating rule exists to prevent.
+
+    The Kanban root is checked first, so a board named for a date stays a
+    board.
+    """
+    path = Path(normalize_vault_path(relative_path))
+    root = path.parts[0].casefold() if len(path.parts) > 1 else ""
     if root == settings.kanban_root.casefold():
         return NoteType.KANBAN
+    if root == settings.log_root.casefold() or valid_iso_date(path.stem):
+        return NoteType.LOG
     return NoteType.STANDARD
 
 

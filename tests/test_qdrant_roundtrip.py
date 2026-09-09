@@ -1,14 +1,13 @@
-from pathlib import Path
 import warnings
+from pathlib import Path
 
 from qdrant_client import QdrantClient, models
 
 from zenith.core.config import Settings
 from zenith.index.links import resolve_links
-from zenith.index.rebuild import IndexRebuilder
+from zenith.index.rebuild import IndexRebuilder, note_alias_map
 from zenith.index.schema import create_collection
 from zenith.parser.service import VaultParser
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 
@@ -40,11 +39,9 @@ def test_all_payloads_and_vectors_round_trip_through_qdrant(tmp_path: Path) -> N
     indexer = IndexRebuilder(settings, client=client, encoders=Encoders())
     notes = resolve_links(VaultParser(settings).parse_vault())
     entries = [entry for note in notes for entry in note.entries]
-    indexer._upsert("entries", entries)
+    indexer._upsert("entries", entries, note_alias_map(notes))
 
-    records, next_offset = client.scroll(
-        "entries", limit=100, with_payload=True, with_vectors=True
-    )
+    records, next_offset = client.scroll("entries", limit=100, with_payload=True, with_vectors=True)
     assert next_offset is None
     expected = {entry.entry_id: indexer._payload(entry) for entry in entries}
     assert {str(record.id): record.payload for record in records} == expected
@@ -54,8 +51,7 @@ def test_all_payloads_and_vectors_round_trip_through_qdrant(tmp_path: Path) -> N
     daily = next(
         record
         for record in records
-        if record.payload["path"] == "logs/2026-08-20.md"
-        and record.payload["heading"] == "Thoughts"
+        if record.payload["path"] == "logs/2026-08-20.md" and record.payload["heading"] == "Thoughts"
     )
     assert daily.payload["note_date"] == "2026-08-20T00:00:00Z"
     assert daily.payload["entry_date"] is None

@@ -59,7 +59,9 @@ def test_estimate_is_empty_for_blank_text() -> None:
 
 def test_content_budget_shrinks_as_the_label_prefix_grows() -> None:
     short = content_budget("Note: A\nContent: ")
-    long = content_budget("Note: A Much Longer Note Title\nSection: Deep Heading\nTags: work, journal\nContent: ")
+    long = content_budget(
+        "Note: A Much Longer Note Title\nSection: Deep Heading\nTags: work, journal\nContent: "
+    )
     assert short > long
     assert short < DEFAULT_TOKEN_WINDOW
 

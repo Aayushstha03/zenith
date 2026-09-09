@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import PurePosixPath
 from typing import Any
-import unicodedata
 
 from qdrant_client import QdrantClient
 
@@ -16,6 +16,7 @@ from zenith.core.contracts import (
     KanbanBoard,
     Link,
     NetworkGraph,
+    NoteContent,
     NoteView,
     ParsedNote,
     QueryPlan,
@@ -27,6 +28,7 @@ from zenith.index.graph import GraphExporter
 from zenith.index.incremental import IncrementalIndexer, IncrementalReport
 from zenith.index.links import resolve_link, resolve_links
 from zenith.index.rebuild import IndexRebuilder, RebuildReport
+from zenith.parser.discovery import discover_markdown
 from zenith.parser.service import VaultParser
 from zenith.retrieval.context import ContextExpander
 from zenith.retrieval.service import Retriever
@@ -45,6 +47,9 @@ class Zenith:
         self.vault_id = vault_id
         self.client = client or QdrantClient(url=settings.qdrant_url)
         self.encoders = encoders
+        self._notes: tuple[ParsedNote, ...] | None = None
+        self._resolved: tuple[ParsedNote, ...] | None = None
+        self._fingerprint: tuple[tuple[str, int, int], ...] | None = None
         self.retriever = Retriever(
             settings,
             vault_id=vault_id,
@@ -107,6 +112,34 @@ class Zenith:
         )
 
     def get_note(self, path_or_title: str) -> NoteView:
+        note = self._match_note(path_or_title)
+        entries = self.retriever.get_note_entries(note.note_id)
+        return NoteView(note.note_id, note.path, note.title, note.note_type, entries)
+
+    def read_note(self, path_or_title: str) -> NoteContent:
+        """Read one complete note from the vault as Markdown.
+
+        Indexed entries are split to fit the dense model and carry cleaned
+        prose. This returns the file itself, including frontmatter, code, and
+        URLs, for the cases where the whole note is the answer.
+        """
+        note = self._match_note(path_or_title)
+        vault = self.settings.vault_path.resolve()
+        # `note.path` comes from vault discovery, so it is already inside the
+        # vault and outside every excluded directory. Re-check anyway: no
+        # caller-supplied string may ever become a path that leaves the mount.
+        resolved = (vault / note.path).resolve()
+        if not resolved.is_relative_to(vault):
+            raise ValueError(f"path escapes vault: {note.path}")
+        return NoteContent(
+            note_id=note.note_id,
+            path=note.path,
+            title=note.title,
+            note_type=note.note_type,
+            content=resolved.read_text(encoding="utf-8"),
+        )
+
+    def _match_note(self, path_or_title: str) -> ParsedNote:
         notes = self._parsed_notes()
         needle = _key(path_or_title)
         path_matches = [
@@ -118,21 +151,15 @@ class Zenith:
                 _key(PurePosixPath(note.path).with_suffix("").as_posix()),
             }
         ]
-        title_matches = [
-            note for note in notes if _key(note.title) == needle
-        ]
-        stem_matches = [
-            note for note in notes if _key(PurePosixPath(note.path).stem) == needle
-        ]
+        title_matches = [note for note in notes if _key(note.title) == needle]
+        stem_matches = [note for note in notes if _key(PurePosixPath(note.path).stem) == needle]
         matches = path_matches or title_matches or stem_matches
         if not matches:
             raise LookupError(f"note not found: {path_or_title}")
         if len(matches) > 1:
             paths = ", ".join(sorted(note.path for note in matches))
             raise ValueError(f"ambiguous note title {path_or_title!r}: {paths}")
-        note = matches[0]
-        entries = self.retriever.get_note_entries(note.note_id)
-        return NoteView(note.note_id, note.path, note.title, note.note_type, entries)
+        return matches[0]
 
     def get_entry(self, entry_id: str) -> SearchResult:
         result = self.retriever.get_entry(entry_id)
@@ -140,9 +167,7 @@ class Zenith:
             raise LookupError(f"entry not found: {entry_id}")
         return result
 
-    def get_outgoing_links(
-        self, note_id: str, entry_id: str | None = None
-    ) -> tuple[Link, ...]:
+    def get_outgoing_links(self, note_id: str, entry_id: str | None = None) -> tuple[Link, ...]:
         if entry_id is not None:
             entry = self.get_entry(entry_id)
             if entry.note_id != note_id:
@@ -169,9 +194,7 @@ class Zenith:
         limit: int = 10,
     ) -> tuple[SearchResult, ...]:
         self._entries_for_note(note_id)
-        return self.retriever.search_within(
-            note_id, query, mode=mode, section=section, limit=limit
-        )
+        return self.retriever.search_within(note_id, query, mode=mode, section=section, limit=limit)
 
     def expand_context(
         self,
@@ -191,7 +214,7 @@ class Zenith:
     def get_index_warnings(
         self, kind: WarningType | None = None, path: str | None = None
     ) -> tuple[IndexWarning, ...]:
-        notes = resolve_links(self._parsed_notes())
+        notes = self._resolved_notes()
         warnings = [warning for note in notes for warning in note.warnings]
         if kind is not None:
             warnings = [warning for warning in warnings if warning.kind is kind]
@@ -220,7 +243,7 @@ class Zenith:
             for board in boards
             if needle in {_key(board.path), _key(PurePosixPath(board.path).with_suffix("").as_posix())}
         ]
-        matches = path_matches or [board for board in boards if _key(board.name) == needle]
+        matches = path_matches or [board for board in boards if _key(board.title) == needle]
         if not matches:
             raise LookupError(f"Kanban board not found: {board_name_or_path}")
         if len(matches) > 1:
@@ -241,7 +264,7 @@ class Zenith:
         semantic_text: str | None = None,
         limit: int = 10,
     ) -> tuple[SearchResult, ...]:
-        board_name = self.get_kanban_board(board).name if board is not None else None
+        board_name = self.get_kanban_board(board).title if board is not None else None
         selected_mode = _mode(None, exact_text, None, semantic_text)
         return self.retriever.search(
             QueryPlan(
@@ -261,9 +284,7 @@ class Zenith:
         )
 
     def export_graph(self) -> NetworkGraph:
-        return GraphExporter(
-            self.settings, vault_id=self.vault_id, client=self.client
-        ).export()
+        return GraphExporter(self.settings, vault_id=self.vault_id, client=self.client).export()
 
     def _entries_for_note(self, note_id: str) -> tuple[SearchResult, ...]:
         results = self.retriever.get_note_entries(note_id)
@@ -272,7 +293,34 @@ class Zenith:
         return results
 
     def _parsed_notes(self) -> tuple[ParsedNote, ...]:
-        return VaultParser(self.settings, self.vault_id).parse_vault()
+        """Return the parsed vault, reparsing only when a Markdown file changed.
+
+        Every call fingerprints the vault: one `rglob` walk, and roughly three
+        stat calls per note between `discover_markdown` and this function. That
+        is still far cheaper than reading, tokenizing, and chunking every file,
+        and it notices edits made by the watcher or by any other process, not
+        only edits made through `reindex`.
+        """
+        fingerprint = self._vault_fingerprint()
+        if self._notes is None or self._fingerprint != fingerprint:
+            self._notes = VaultParser(self.settings, self.vault_id).parse_vault()
+            self._fingerprint = fingerprint
+            self._resolved = None
+        return self._notes
+
+    def _resolved_notes(self) -> tuple[ParsedNote, ...]:
+        notes = self._parsed_notes()
+        if self._resolved is None:
+            self._resolved = resolve_links(notes)
+        return self._resolved
+
+    def _vault_fingerprint(self) -> tuple[tuple[str, int, int], ...]:
+        vault = self.settings.vault_path.resolve()
+        fingerprint: list[tuple[str, int, int]] = []
+        for path in discover_markdown(self.settings):
+            stat = path.stat()
+            fingerprint.append((path.relative_to(vault).as_posix(), stat.st_mtime_ns, stat.st_size))
+        return tuple(fingerprint)
 
 
 def _mode(
@@ -299,18 +347,16 @@ def _board(cards: list[SearchResult]) -> KanbanBoard:
         sorted(
             cards,
             key=lambda card: (
-                card.kanban.column_position if card.kanban else 0,
-                card.kanban.card_position if card.kanban else 0,
+                card.board.column_position if card.board else 0,
+                card.board.card_position if card.board else 0,
                 card.entry_id,
             ),
         )
     )
     first = ordered[0]
-    assert first.kanban is not None
-    columns = tuple(
-        dict.fromkeys(card.kanban.column for card in ordered if card.kanban is not None)
-    )
-    return KanbanBoard(first.note_id, first.path, first.kanban.name, columns, ordered)
+    assert first.board is not None
+    columns = tuple(dict.fromkeys(card.board.column for card in ordered if card.board is not None))
+    return KanbanBoard(first.note_id, first.path, first.note_title, columns, ordered)
 
 
 def _key(value: str) -> str:

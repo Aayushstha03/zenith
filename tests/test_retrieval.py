@@ -1,6 +1,6 @@
-from pathlib import Path
 import re
 import warnings
+from pathlib import Path
 
 import pytest
 from qdrant_client import QdrantClient, models
@@ -12,7 +12,6 @@ from zenith.index.rebuild import IndexRebuilder
 from zenith.index.schema import create_collection
 from zenith.retrieval.literal import verify_literal
 from zenith.retrieval.service import Retriever
-
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "vault"
 DENSE_DIMS = 384
@@ -74,10 +73,6 @@ def index_fixture_vault(tmp_path: Path) -> tuple[QdrantClient, Settings]:
 
 def base_payload(**overrides: object) -> dict[str, object]:
     payload = {
-        "schema_version": 3,
-        "parser_version": "test",
-        "embedding_model": "test",
-        "sparse_model": "test",
         "vault_id": "personal",
         "note_id": "note-1",
         "entry_id": "e1",
@@ -98,11 +93,8 @@ def base_payload(**overrides: object) -> dict[str, object]:
         "web_links": [],
         "content_hash": "x",
         "modified_at": "2026-01-01T00:00:00Z",
+        "embedding_fingerprint": "",
         "board": None,
-        "encoder_version": "1",
-        "tokenizer_version": "1",
-        "embedding_input_version": "1",
-        "embedding_input_hash": "",
     }
     payload.update(overrides)
     return payload
@@ -245,8 +237,14 @@ def test_tags_all_requires_every_tag_and_tags_any_requires_one(tmp_path: Path) -
 def test_note_id_and_section_filters(tmp_path: Path) -> None:
     client = real_client(tmp_path)
     settings = make_settings(FIXTURE_VAULT, tmp_path)
-    upsert_point(client, 1, base_payload(entry_id="p1", note_id="note-a", heading="Intro", heading_path=["Intro"]))
-    upsert_point(client, 2, base_payload(entry_id="p2", note_id="note-b", heading="Body", heading_path=["Parent", "Body"]))
+    upsert_point(
+        client, 1, base_payload(entry_id="p1", note_id="note-a", heading="Intro", heading_path=["Intro"])
+    )
+    upsert_point(
+        client,
+        2,
+        base_payload(entry_id="p2", note_id="note-b", heading="Body", heading_path=["Parent", "Body"]),
+    )
     retriever = Retriever(settings, client=client)
 
     by_note = retriever.search(QueryPlan(mode=RetrievalMode.METADATA, note_id="note-a"))
@@ -263,17 +261,35 @@ def test_entry_type_and_kanban_filters(tmp_path: Path) -> None:
     client = real_client(tmp_path)
     settings = make_settings(FIXTURE_VAULT, tmp_path)
     upsert_point(
-        client, 1,
+        client,
+        1,
         base_payload(
-            entry_id="p1", entry_type="kanban_card",
-            board={"name": "Kitchen", "column": "Doing", "status": None, "column_position": 0, "card_position": 0, "checked": False},
+            entry_id="p1",
+            entry_type="kanban_card",
+            note_title="Kitchen",
+            board={
+                "column": "Doing",
+                "status": None,
+                "column_position": 0,
+                "card_position": 0,
+                "checked": False,
+            },
         ),
     )
     upsert_point(
-        client, 2,
+        client,
+        2,
         base_payload(
-            entry_id="p2", entry_type="kanban_card",
-            board={"name": "Kitchen", "column": "Done", "status": None, "column_position": 1, "card_position": 0, "checked": True},
+            entry_id="p2",
+            entry_type="kanban_card",
+            note_title="Kitchen",
+            board={
+                "column": "Done",
+                "status": None,
+                "column_position": 1,
+                "card_position": 0,
+                "checked": True,
+            },
         ),
     )
     upsert_point(client, 3, base_payload(entry_id="p3", entry_type="freeform_section"))
@@ -282,13 +298,15 @@ def test_entry_type_and_kanban_filters(tmp_path: Path) -> None:
     by_type = retriever.search(QueryPlan(mode=RetrievalMode.METADATA, entry_types=(EntryType.KANBAN_CARD,)))
     assert {r.entry_id for r in by_type} == {"p1", "p2"}
 
-    by_column = retriever.search(QueryPlan(mode=RetrievalMode.METADATA, kanban_board="Kitchen", kanban_column="Doing"))
+    by_column = retriever.search(
+        QueryPlan(mode=RetrievalMode.METADATA, kanban_board="Kitchen", kanban_column="Doing")
+    )
     assert {r.entry_id for r in by_column} == {"p1"}
 
     by_checked = retriever.search(QueryPlan(mode=RetrievalMode.METADATA, kanban_checked=True))
     result = by_checked[0]
     assert {r.entry_id for r in by_checked} == {"p2"}
-    assert result.kanban.column == "Done"
+    assert result.board.column == "Done"
 
 
 def test_date_range_matches_note_date_or_entry_date_while_staying_distinct(tmp_path: Path) -> None:
@@ -299,7 +317,9 @@ def test_date_range_matches_note_date_or_entry_date_while_staying_distinct(tmp_p
     upsert_point(client, 3, base_payload(entry_id="p3", note_date="2027-01-01T00:00:00Z", entry_date=None))
     retriever = Retriever(settings, client=client)
 
-    results = retriever.search(QueryPlan(mode=RetrievalMode.METADATA, date_from="2026-01-01", date_to="2026-01-01"))
+    results = retriever.search(
+        QueryPlan(mode=RetrievalMode.METADATA, date_from="2026-01-01", date_to="2026-01-01")
+    )
     by_id = {r.entry_id: r for r in results}
     assert set(by_id) == {"p1", "p2"}
     assert by_id["p1"].note_date == "2026-01-01" and by_id["p1"].entry_date is None
@@ -310,7 +330,8 @@ def test_outgoing_links_round_trip_with_full_evidence(tmp_path: Path) -> None:
     client = real_client(tmp_path)
     settings = make_settings(FIXTURE_VAULT, tmp_path)
     upsert_point(
-        client, 1,
+        client,
+        1,
         base_payload(
             entry_id="p1",
             outgoing_note_ids=["note-2"],
@@ -347,9 +368,7 @@ def test_entry_lookup_backlinks_and_note_scoped_search_use_resolved_payloads(
     daily_id = str(compute_note_id("personal", "logs/2026-08-20.md"))
     project_id = str(compute_note_id("personal", "projects/News Resolution.md"))
 
-    daily = retriever.search(
-        QueryPlan(mode=RetrievalMode.METADATA, note_id=daily_id, section="Work")
-    )[0]
+    daily = retriever.search(QueryPlan(mode=RetrievalMode.METADATA, note_id=daily_id, section="Work"))[0]
     assert retriever.get_entry(daily.entry_id) == daily
 
     backlinks = retriever.get_backlinks(project_id)
@@ -397,10 +416,19 @@ def test_lexical_semantic_and_hybrid_surface_different_signals(tmp_path: Path) -
 
     upsert_point(client, 1, base_payload(entry_id="p1"), dense=p1_dense, sparse=lexical_hit_sparse)
     upsert_point(
-        client, 2, base_payload(entry_id="p2"),
-        dense=semantic_hit_dense, sparse=models.SparseVector(indices=[50], values=[0.01]),
+        client,
+        2,
+        base_payload(entry_id="p2"),
+        dense=semantic_hit_dense,
+        sparse=models.SparseVector(indices=[50], values=[0.01]),
     )
-    upsert_point(client, 3, base_payload(entry_id="p3"), dense=p3_dense, sparse=models.SparseVector(indices=[60], values=[0.01]))
+    upsert_point(
+        client,
+        3,
+        base_payload(entry_id="p3"),
+        dense=p3_dense,
+        sparse=models.SparseVector(indices=[60], values=[0.01]),
+    )
 
     encoders = QueryEncoders(
         dense={"find-semantic": semantic_hit_dense},
@@ -412,11 +440,15 @@ def test_lexical_semantic_and_hybrid_surface_different_signals(tmp_path: Path) -
     assert lexical[0].entry_id == "p1"
     assert lexical[0].score is not None
 
-    semantic = retriever.search(QueryPlan(mode=RetrievalMode.SEMANTIC, semantic_text="find-semantic", limit=5))
+    semantic = retriever.search(
+        QueryPlan(mode=RetrievalMode.SEMANTIC, semantic_text="find-semantic", limit=5)
+    )
     assert semantic[0].entry_id == "p2"
 
     hybrid = retriever.search(
-        QueryPlan(mode=RetrievalMode.HYBRID, lexical_text="find-lexical", semantic_text="find-semantic", limit=2)
+        QueryPlan(
+            mode=RetrievalMode.HYBRID, lexical_text="find-lexical", semantic_text="find-semantic", limit=2
+        )
     )
     assert {r.entry_id for r in hybrid} == {"p1", "p2"}
 
