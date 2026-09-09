@@ -21,7 +21,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from qdrant_client import QdrantClient, models
 
-from zenith.agent import DEFAULT_LIMITS, build_agent
+from zenith.agent import DEFAULT_LIMITS, Sources, build_agent
 from zenith.core.config import Settings
 from zenith.index.rebuild import IndexRebuilder
 from zenith.library import Zenith
@@ -33,9 +33,7 @@ class HashEncoders:
     def encode(self, texts: list[str]):
         return [
             {"semantic": dense, "text-bm25": sparse}
-            for dense, sparse in zip(
-                self.encode_dense(texts), self.encode_sparse(texts), strict=True
-            )
+            for dense, sparse in zip(self.encode_dense(texts), self.encode_sparse(texts), strict=True)
         ]
 
     def encode_dense(self, texts: list[str]) -> list[list[float]]:
@@ -44,29 +42,31 @@ class HashEncoders:
     def encode_sparse(self, texts: list[str]) -> list[models.SparseVector]:
         vectors = []
         for text in texts:
-            indices = sorted({abs(hash(word)) % 997 for word in re.findall(r"[a-z0-9]+", text.lower())}) or [0]
+            indices = sorted({abs(hash(word)) % 997 for word in re.findall(r"[a-z0-9]+", text.lower())}) or [
+                0
+            ]
             vectors.append(models.SparseVector(indices=indices, values=[1.0] * len(indices)))
         return vectors
 
 
 @pytest.fixture
-def vault_api(tmp_path: Path) -> Zenith:
+def vault_api(tmp_path: Path) -> Sources:
     vault = tmp_path / "vault"
     shutil.copytree(FIXTURE_VAULT, vault)
-    settings = Settings(
-        "http://unused", vault, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://unused", vault, tmp_path / "models", "entries", "127.0.0.1", 8080)
     client = QdrantClient(path=str(tmp_path / "qdrant"))
     encoders = HashEncoders()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         IndexRebuilder(settings, client=client, encoders=encoders).rebuild()
-    return Zenith(settings, client=client, encoders=encoders)
+    # The agent depends on the run's source ledger, not on the library, so the
+    # labels it hands out survive from one tool call to the next.
+    return Sources(Zenith(settings, client=client, encoders=encoders))
 
 
 @pytest.fixture
-def settings(vault_api: Zenith) -> Settings:
-    return vault_api.settings
+def settings(vault_api: Sources) -> Settings:
+    return vault_api.vault.settings
 
 
 def _returns(messages: list[ModelMessage], tool_name: str) -> list[object]:
@@ -91,9 +91,7 @@ EVERY_TOOL = {
 }
 
 
-def test_every_tool_is_declared_and_succeeds_in_a_real_agent_run(
-    settings, vault_api
-) -> None:
+def test_every_tool_is_declared_and_succeeds_in_a_real_agent_run(settings, vault_api) -> None:
     """Walk all five tools with real arguments inside one agent run.
 
     TestModel invents argument values, which a name or identifier tool rightly
@@ -117,7 +115,7 @@ def test_every_tool_is_declared_and_succeeds_in_a_real_agent_run(
         if "read_note" not in done:
             return _call("read_note", {"name": found[0]["path"]})
         if "expand_context" not in done:
-            return _call("expand_context", {"entry_id": found[0]["entry_id"]})
+            return _call("expand_context", {"source": found[0]["id"]})
         if "find_backlinks" not in done:
             return _call("find_backlinks", {"name": "News Resolution"})
         if "find_tasks" not in done:
@@ -146,9 +144,7 @@ def test_every_tool_is_declared_and_succeeds_in_a_real_agent_run(
     ]
 
 
-def test_test_model_still_exercises_the_tools_it_can_guess_arguments_for(
-    settings, vault_api
-) -> None:
+def test_test_model_still_exercises_the_tools_it_can_guess_arguments_for(settings, vault_api) -> None:
     """A guessed argument must fail as a repairable retry, never as a crash."""
     agent = build_agent(settings, model=TestModel(call_tools=["search_notes", "find_tasks"]))
     result = agent.run_sync("anything", deps=vault_api)
@@ -170,9 +166,7 @@ def _payload(content: object) -> list[dict]:
     return json.loads(content) if isinstance(content, str) else content
 
 
-def test_the_model_can_search_then_follow_an_entry_into_its_context(
-    settings, vault_api
-) -> None:
+def test_the_model_can_search_then_follow_an_entry_into_its_context(settings, vault_api) -> None:
     """A two-step loop: the second call uses an id the first call produced."""
     steps: list[str] = []
 
@@ -181,17 +175,11 @@ def test_the_model_can_search_then_follow_an_entry_into_its_context(
         expanded = _returns(messages, "expand_context")
         if not searched:
             steps.append("search")
-            return ModelResponse(
-                parts=[ToolCallPart("search_notes", {"query": "pipeline", "limit": 3})]
-            )
+            return ModelResponse(parts=[ToolCallPart("search_notes", {"query": "pipeline", "limit": 3})])
         if not expanded:
             entries = _payload(searched[0])
             steps.append("expand")
-            return ModelResponse(
-                parts=[
-                    ToolCallPart("expand_context", {"entry_id": entries[0]["entry_id"]})
-                ]
-            )
+            return ModelResponse(parts=[ToolCallPart("expand_context", {"source": entries[0]["id"]})])
         context = _payload(expanded[0])
         labels = {label for item in context["items"] for label in item["evidence"]}
         steps.append("answer")
@@ -255,13 +243,13 @@ def test_the_instructions_state_the_citation_and_dating_rules(settings, vault_ap
     build_agent(settings, model=FunctionModel(capture)).run_sync("hi", deps=vault_api)
 
     instructions = captured[0]
-    # The rule alone produced no citations from a small model. The literal
-    # template and the worked example are what it actually follows, so both
-    # are part of the contract now, not prose that may be reworded away.
-    assert "[Note Title, Heading, lines N-M]" in instructions
-    assert "lines 6-9]" in instructions
-    # entry_id is an argument for expand_context, never a citation to print.
-    assert "Never print an `entry_id`" in instructions
+    # The model cites a label, not a citation it assembles. The worked example
+    # and the rejected forms are what it actually follows, so both are part of
+    # the contract now, not prose that may be reworded away.
+    assert "parsing model. [s2]" in instructions
+    assert "[s2][s5]" in instructions
+    assert "[News Resolution, 2026-08-17, lines 6-9]" in instructions
+    assert "Put nothing inside the brackets except the id" in instructions
     assert "undated" in instructions
     assert "exact_match_verified" in instructions
 

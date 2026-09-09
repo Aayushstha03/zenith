@@ -15,6 +15,7 @@ from qdrant_client import QdrantClient, models
 
 from zenith.agent import tools
 from zenith.agent.projections import MAX_ENTRY_CHARS, MAX_NOTE_CHARS
+from zenith.agent.sources import Sources
 from zenith.core.config import Settings
 from zenith.index.rebuild import IndexRebuilder
 from zenith.library import Zenith
@@ -26,9 +27,7 @@ class HashEncoders:
     def encode(self, texts: list[str]):
         return [
             {"semantic": dense, "text-bm25": sparse}
-            for dense, sparse in zip(
-                self.encode_dense(texts), self.encode_sparse(texts), strict=True
-            )
+            for dense, sparse in zip(self.encode_dense(texts), self.encode_sparse(texts), strict=True)
         ]
 
     def encode_dense(self, texts: list[str]) -> list[list[float]]:
@@ -37,25 +36,25 @@ class HashEncoders:
     def encode_sparse(self, texts: list[str]) -> list[models.SparseVector]:
         vectors = []
         for text in texts:
-            indices = sorted({abs(hash(word)) % 997 for word in re.findall(r"[a-z0-9]+", text.lower())}) or [0]
+            indices = sorted({abs(hash(word)) % 997 for word in re.findall(r"[a-z0-9]+", text.lower())}) or [
+                0
+            ]
             vectors.append(models.SparseVector(indices=indices, values=[1.0] * len(indices)))
         return vectors
 
 
 @pytest.fixture
-def ctx(tmp_path: Path) -> RunContext[Zenith]:
+def ctx(tmp_path: Path) -> RunContext[Sources]:
     vault = tmp_path / "vault"
     shutil.copytree(FIXTURE_VAULT, vault)
-    settings = Settings(
-        "http://unused", vault, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://unused", vault, tmp_path / "models", "entries", "127.0.0.1", 8080)
     client = QdrantClient(path=str(tmp_path / "qdrant"))
     encoders = HashEncoders()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         IndexRebuilder(settings, client=client, encoders=encoders).rebuild()
     api = Zenith(settings, client=client, encoders=encoders)
-    return RunContext(deps=api, model=TestModel(), usage=RunUsage())
+    return RunContext(deps=Sources(api), model=TestModel(), usage=RunUsage())
 
 
 def test_every_tool_declares_a_flat_described_schema() -> None:
@@ -67,14 +66,10 @@ def test_every_tool_declares_a_flat_described_schema() -> None:
             assert spec.get("description"), f"{definition.name}.{name} has no description"
             # Flat arguments only: a local model handles scalars and string
             # lists, and fumbles nested objects.
-            types = {spec.get("type")} | {
-                option.get("type") for option in spec.get("anyOf", [])
-            }
+            types = {spec.get("type")} | {option.get("type") for option in spec.get("anyOf", [])}
             assert types <= {"string", "integer", "boolean", "array", "null", None}
             if "array" in types:
-                assert spec.get("items", spec.get("anyOf", [{}])[0].get("items", {})).get(
-                    "type"
-                ) == "string"
+                assert spec.get("items", spec.get("anyOf", [{}])[0].get("items", {})).get("type") == "string"
 
 
 def test_every_tool_takes_an_annotated_run_context() -> None:
@@ -90,7 +85,7 @@ def test_every_tool_takes_an_annotated_run_context() -> None:
         first = next(iter(inspect.signature(function).parameters.values()))
         annotation = inspect.get_annotations(function, eval_str=True)[first.name]
         assert typing.get_origin(annotation) is RunContext
-        assert typing.get_args(annotation) == (Zenith,)
+        assert typing.get_args(annotation) == (Sources,)
 
 
 def test_the_write_and_unbounded_operations_are_not_offered() -> None:
@@ -106,23 +101,27 @@ def test_the_write_and_unbounded_operations_are_not_offered() -> None:
     assert "export_graph" not in offered
 
 
-def test_search_projects_entries_with_citable_fields(ctx: RunContext[Zenith]) -> None:
+def test_search_projects_entries_with_citable_fields(ctx: RunContext[Sources]) -> None:
     results = tools.search_notes(ctx, "pipeline", limit=3)
     assert results
     first = results[0]
-    assert set(first) >= {"entry_id", "note", "path", "lines", "date", "date_kind", "text"}
+    assert set(first) >= {"id", "note", "path", "lines", "date", "date_kind", "text"}
     assert re.fullmatch(r"\d+-\d+", first["lines"])
+    # `id` is the citation, and the only identifier the model is given. A
+    # result carrying an entry_id would hand it a second one to print.
+    assert [result["id"] for result in results] == ["s1", "s2", "s3"][: len(results)]
+    assert "entry_id" not in first
     # Similarity is not proof of an exact phrase, so it must not claim to be.
     assert "exact_match_verified" not in first
 
 
-def test_exact_search_reports_a_verified_literal_match(ctx: RunContext[Zenith]) -> None:
+def test_exact_search_reports_a_verified_literal_match(ctx: RunContext[Sources]) -> None:
     results = tools.search_notes(ctx, "fried chicken", exact=True)
     assert results
     assert all(result["exact_match_verified"] is True for result in results)
 
 
-def test_an_undated_entry_is_never_given_a_date(ctx: RunContext[Zenith]) -> None:
+def test_an_undated_entry_is_never_given_a_date(ctx: RunContext[Sources]) -> None:
     results = tools.search_notes(ctx, "pipeline", limit=20)
     for result in results:
         if result["date_kind"] is None:
@@ -132,7 +131,7 @@ def test_an_undated_entry_is_never_given_a_date(ctx: RunContext[Zenith]) -> None
             assert result["date"]
 
 
-def test_read_note_returns_the_whole_file_within_a_cap(ctx: RunContext[Zenith]) -> None:
+def test_read_note_returns_the_whole_file_within_a_cap(ctx: RunContext[Sources]) -> None:
     note = tools.read_note(ctx, "News Resolution")
     assert note["path"] == "projects/News Resolution.md"
     assert note["content"].startswith("# News Resolution")
@@ -140,17 +139,19 @@ def test_read_note_returns_the_whole_file_within_a_cap(ctx: RunContext[Zenith]) 
     assert "content_truncated" not in note
 
 
-def test_expand_context_keeps_the_evidence_labels(ctx: RunContext[Zenith]) -> None:
-    entry_id = tools.search_notes(ctx, "pipeline", limit=1)[0]["entry_id"]
-    expansion = tools.expand_context(ctx, entry_id)
-    assert expansion["source_entry_id"] == entry_id
+def test_expand_context_keeps_the_evidence_labels(ctx: RunContext[Sources]) -> None:
+    source = tools.search_notes(ctx, "pipeline", limit=1)[0]["id"]
+    expansion = tools.expand_context(ctx, source)
+    # No entry id is echoed back. The caller named the source by its label, and
+    # an internal identifier in the result is one the model may print.
+    assert "source_entry_id" not in expansion
     assert expansion["items"]
     labels = {label for item in expansion["items"] for label in item["evidence"]}
     assert "direct_evidence" in labels
     assert all("hops" in item for item in expansion["items"])
 
 
-def test_backlinks_and_tasks_resolve_by_name(ctx: RunContext[Zenith]) -> None:
+def test_backlinks_and_tasks_resolve_by_name(ctx: RunContext[Sources]) -> None:
     backlinks = tools.find_backlinks(ctx, "News Resolution")
     assert backlinks
     assert all("path" in result for result in backlinks)
@@ -162,7 +163,7 @@ def test_backlinks_and_tasks_resolve_by_name(ctx: RunContext[Zenith]) -> None:
 
 
 def test_a_bad_name_becomes_an_instruction_the_model_can_act_on(
-    ctx: RunContext[Zenith],
+    ctx: RunContext[Sources],
 ) -> None:
     with pytest.raises(ModelRetry, match="note not found"):
         tools.read_note(ctx, "No Such Note")
@@ -172,11 +173,16 @@ def test_a_bad_name_becomes_an_instruction_the_model_can_act_on(
         tools.read_note(ctx, "Shared")
     assert ".md" in str(ambiguous.value)
 
-    with pytest.raises(ModelRetry, match="entry not found"):
-        tools.expand_context(ctx, "not-an-entry")
+    with pytest.raises(ModelRetry, match="not a source this answer has seen"):
+        tools.expand_context(ctx, "s99")
+
+    # `id` is the first field of every result, so it is the identifier the
+    # model has just read when it reaches for a note name.
+    with pytest.raises(ModelRetry, match="source id, not a note name"):
+        tools.read_note(ctx, "s1")
 
 
-def test_limits_are_clamped_rather_than_trusted(ctx: RunContext[Zenith]) -> None:
+def test_limits_are_clamped_rather_than_trusted(ctx: RunContext[Sources]) -> None:
     assert len(tools.search_notes(ctx, "the", limit=999)) <= 20
     assert tools.search_notes(ctx, "the", limit=0)
 
@@ -193,12 +199,26 @@ def test_a_clipped_entry_only_claims_a_verified_match_it_can_show() -> None:
     phrase = "fried chicken"
     text = "a" * 3000 + f" {phrase} " + "b" * 3000
     result = SearchResult(
-        "e", "n", "p.md", "N", NoteType.STANDARD, EntryType.FREEFORM_SECTION,
-        RetrievalMode.LITERAL, text, None, (), 1, 9, None, None, (), (),
+        "e",
+        "n",
+        "p.md",
+        "N",
+        NoteType.STANDARD,
+        EntryType.FREEFORM_SECTION,
+        RetrievalMode.LITERAL,
+        text,
+        None,
+        (),
+        1,
+        9,
+        None,
+        None,
+        (),
+        (),
         verified=True,
     )
 
-    windowed = projections.entry(result, match=phrase)
+    windowed = projections.entry(Sources(None), result, match=phrase)
     assert windowed["text_truncated"] is True
     assert phrase in windowed["text"]
     assert windowed["exact_match_verified"] is True
@@ -206,13 +226,13 @@ def test_a_clipped_entry_only_claims_a_verified_match_it_can_show() -> None:
 
     # Without the phrase to centre on, the clip cannot show the proof, so the
     # claim of proof is withheld rather than made on unseen text.
-    blind = projections.entry(result)
+    blind = projections.entry(Sources(None), result)
     assert blind["text_truncated"] is True
     assert phrase not in blind["text"]
     assert "exact_match_verified" not in blind
 
 
-def test_an_unknown_kanban_column_names_the_real_ones(ctx: RunContext[Zenith]) -> None:
+def test_an_unknown_kanban_column_names_the_real_ones(ctx: RunContext[Sources]) -> None:
     """A case-sensitive miss would otherwise read as an empty board."""
     with pytest.raises(ModelRetry, match="unknown Kanban column") as unknown:
         tools.find_tasks(ctx, board="Kitchen App", columns=["To Do"])
@@ -222,13 +242,13 @@ def test_an_unknown_kanban_column_names_the_real_ones(ctx: RunContext[Zenith]) -
     assert tools.find_tasks(ctx, board="Kitchen App", columns=["todo"])
 
 
-def test_find_tasks_never_claims_a_card_contains_the_query(ctx: RunContext[Zenith]) -> None:
+def test_find_tasks_never_claims_a_card_contains_the_query(ctx: RunContext[Sources]) -> None:
     cards = tools.find_tasks(ctx, board="Kitchen App", query="recipe", limit=3)
     assert cards
     assert all("exact_match_verified" not in card for card in cards)
 
 
-def test_search_narrows_by_tag_and_by_date(ctx: RunContext[Zenith]) -> None:
+def test_search_narrows_by_tag_and_by_date(ctx: RunContext[Sources]) -> None:
     """The filters are how a question about a period, or a topic, stays honest.
 
     A model that cannot narrow searches the whole vault and answers from
@@ -238,15 +258,13 @@ def test_search_narrows_by_tag_and_by_date(ctx: RunContext[Zenith]) -> None:
     assert tagged
     assert all("journal" in result["tags"] for result in tagged)
 
-    dated = tools.search_notes(
-        ctx, "pipeline", date_from="2026-08-19", date_to="2026-08-19", limit=10
-    )
+    dated = tools.search_notes(ctx, "pipeline", date_from="2026-08-19", date_to="2026-08-19", limit=10)
     assert dated
     assert all(result["date"] == "2026-08-19" for result in dated)
 
 
 def test_expand_context_reports_the_links_it_could_not_resolve(
-    ctx: RunContext[Zenith],
+    ctx: RunContext[Sources],
 ) -> None:
     """A link that leads nowhere is evidence too.
 
@@ -254,15 +272,15 @@ def test_expand_context_reports_the_links_it_could_not_resolve(
     the whole of what the entry points at, and answer as if nothing were
     missing.
     """
-    entry_id = tools.search_notes(ctx, "Missing", exact=True, limit=5)[0]["entry_id"]
-    unresolved = tools.expand_context(ctx, entry_id)["unresolved_links"]
+    source = tools.search_notes(ctx, "Missing", exact=True, limit=5)[0]["id"]
+    unresolved = tools.expand_context(ctx, source)["unresolved_links"]
     reasons = {item["target"]: item["reason"] for item in unresolved}
     assert reasons["Does Not Exist"] == "missing"
     assert reasons["Shared"] == "ambiguous"
 
 
 def test_a_column_is_resolved_across_every_board_when_none_is_named(
-    ctx: RunContext[Zenith],
+    ctx: RunContext[Sources],
 ) -> None:
     """Without a board, a column has to be checked against all of them.
 
@@ -290,7 +308,7 @@ def test_an_oversized_note_is_marked_as_a_fragment() -> None:
     from zenith.core.contracts import NoteContent, NoteType
 
     content = NoteContent("n", "p.md", "N", NoteType.STANDARD, "a" * (MAX_NOTE_CHARS + 500))
-    projected = projections.note(content)
+    projected = projections.note(Sources(None), content)
 
     assert projected["content_truncated"] is True
     assert projected["content"].endswith("[... truncated]")
@@ -307,18 +325,20 @@ def test_a_library_bug_is_not_disguised_as_a_model_mistake() -> None:
         raise TypeError("the library is broken")
 
 
-def test_an_entry_id_sent_to_read_note_says_what_to_send_instead(
-    ctx: RunContext[Zenith],
+def test_a_whole_note_is_citable_and_cannot_be_expanded(
+    ctx: RunContext[Sources],
 ) -> None:
-    """The model reaches for the one identifier every result carries.
+    """A note read whole has a label, but no entry behind it.
 
-    The library would answer only "note not found", which does not tell it
-    which field to use, so it costs a retry and sometimes a wrong note.
+    Its label is what makes a fact drawn from `read_note` citable at all: the
+    projection has no line range to cite, so a citation assembled from one
+    could not be written. Expansion still needs a real entry, and says so.
     """
-    entry_id = tools.search_notes(ctx, "pipeline", limit=1)[0]["entry_id"]
-    with pytest.raises(ModelRetry, match="is an entry_id, not a note name") as wrong:
-        tools.read_note(ctx, entry_id)
-    assert "`note`" in str(wrong.value) and "`path`" in str(wrong.value)
+    note = tools.read_note(ctx, "News Resolution")
+    assert note["id"].startswith("s")
+    assert ctx.deps.cited(f"a fact [{note['id']}]") == {
+        note["id"]: {"note": "News Resolution", "path": "projects/News Resolution.md"}
+    }
 
-    # A real name is untouched by the guard.
-    assert tools.read_note(ctx, "News Resolution")["note"] == "News Resolution"
+    with pytest.raises(ModelRetry, match="is a whole note, not an entry"):
+        tools.expand_context(ctx, note["id"])

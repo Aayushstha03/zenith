@@ -84,9 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     ask = commands.add_parser("ask", help="answer a question from the notes vault")
     ask.add_argument("question")
-    ask.add_argument(
-        "--model", default=None, help="override ZENITH_LLM_MODEL for this question"
-    )
+    ask.add_argument("--model", default=None, help="override ZENITH_LLM_MODEL for this question")
 
     note = commands.add_parser("note", help="retrieve notes")
     note_commands = note.add_subparsers(dest="note_command", required=True)
@@ -320,7 +318,7 @@ def _run(args: argparse.Namespace, settings: Settings) -> int:
 def _ask(args: argparse.Namespace, settings: Settings, api: Zenith) -> int:
     # Imported here, not at module scope: pulling in the agent stack costs
     # more than a second, and every other command would pay it for nothing.
-    from zenith.agent import DEFAULT_LIMITS, build_agent
+    from zenith.agent import DEFAULT_LIMITS, Sources, build_agent
 
     if args.model:
         settings = replace(settings, llm_model=args.model)
@@ -363,12 +361,14 @@ def _ask(args: argparse.Namespace, settings: Settings, api: Zenith) -> int:
         )
         return 1
 
-    result = build_agent(settings).run_sync(
-        args.question, deps=api, usage_limits=DEFAULT_LIMITS
-    )
+    # One ledger per question. The model cites `s1`, `s2`; the ledger is what
+    # turns those back into a note, a heading, and a line range for the reader.
+    sources = Sources(api)
+    result = build_agent(settings).run_sync(args.question, deps=sources, usage_limits=DEFAULT_LIMITS)
     _print(
         {
             "answer": result.output,
+            "citations": sources.cited(result.output),
             "model": settings.llm_model,
             "question": args.question,
             "tool_calls": _tool_calls(result),

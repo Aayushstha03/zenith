@@ -7,6 +7,11 @@ use the complete invocation:
 docker compose exec zenith zenith COMMAND
 ```
 
+The container runs the working tree, which `compose.yaml` binds at `/app/src`,
+so a command reflects an edit without a rebuild. `zenith serve` and
+`zenith watch` are already running and keep their own code until
+`docker compose restart zenith watch`.
+
 All normal command results are deterministic, pretty-printed JSON. Property
 names are sorted so unchanged commands are easy to diff.
 
@@ -408,6 +413,32 @@ docker compose exec zenith zenith ask "..." --model lfm2.5-8b-a1b
 Answers a question from the vault. The model reaches the notes only through
 the five tools in `zenith.agent`: search, whole-note read, context expansion,
 backlinks, and Kanban cards. It cannot write, and it cannot export the graph.
+
+The model does not write citations. Every result a tool returns carries a
+short `id`, `s1`, `s2`, `s3`, and the model cites the id. The answer therefore
+reads `You added an llm based parsing model. [s2]`, and the `citations` object
+resolves each cited id to the note, heading, and line range behind it:
+
+```json
+{
+  "answer": "You added an llm based parsing model. [s2]",
+  "citations": {
+    "s2": {
+      "note": "News Resolution",
+      "path": "projects/News Resolution.md",
+      "heading": "2026-08-17",
+      "lines": "6-9"
+    }
+  }
+}
+```
+
+Ids are issued per question and count from `s1` each time; they mean nothing
+outside the answer built from them. One entry reached twice keeps one id. A
+note read whole through `read_note` gets an id too, and resolves to the note
+without a line range, because there is no one range to claim. An id the run
+never issued resolves to `{"unknown": true}`, so an answer citing evidence
+that does not exist does not read like one citing evidence that does.
 
 `--model` overrides `ZENITH_LLM_MODEL` for one question, which is how to
 compare two loaded models without editing the environment.

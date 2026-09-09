@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from zenith.agent.sources import Sources
 from zenith.core.contracts import (
     ContextExpansion,
     NoteContent,
@@ -22,7 +23,7 @@ MAX_ENTRY_CHARS = 1200
 MAX_NOTE_CHARS = 12000
 
 
-def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
+def entry(sources: Sources, result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
     """Project one search result down to what an answer needs to cite it.
 
     `match` is the literal phrase a caller verified. Clipping is centred on it,
@@ -31,11 +32,13 @@ def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
     """
     text, truncated = _clip(result.text, MAX_ENTRY_CHARS, match=match)
     date, date_kind = _date(result)
-    # Citation fields lead. A model reads a result in key order and cites the
-    # first identifier it meets, so `entry_id` sitting first got printed as the
-    # citation. It is an argument for `expand_context`, not something to show a
-    # reader, so it goes last.
+    # `id` leads. A model reads a result in key order and cites the first
+    # identifier it meets, so the first one it meets is the only one it is
+    # allowed to print. The note title, the heading, and the line range stay in
+    # the result because they are evidence a model reasons over, but it never
+    # has to assemble them into a citation: the label already is one.
     projected: dict[str, Any] = {
+        "id": sources.label(result),
         "note": result.note_title,
         "heading": result.heading,
         "lines": f"{result.start_line}-{result.end_line}",
@@ -44,7 +47,6 @@ def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
         "date_kind": date_kind,
         "tags": list(result.tags),
         "text": text,
-        "entry_id": result.entry_id,
     }
     if truncated:
         projected["text_truncated"] = True
@@ -52,9 +54,7 @@ def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
     # and must never be reported as if it had. Neither may a clipped body that
     # no longer contains the phrase: the model would be told the wording is
     # proven while holding text that does not show it.
-    if result.verified is not None and (
-        not result.verified or not truncated or _contains(text, match)
-    ):
+    if result.verified is not None and (not result.verified or not truncated or _contains(text, match)):
         projected["exact_match_verified"] = result.verified
     if result.board is not None:
         projected["task"] = {
@@ -67,14 +67,15 @@ def entry(result: SearchResult, *, match: str | None = None) -> dict[str, Any]:
 
 
 def entries(
-    results: tuple[SearchResult, ...], *, match: str | None = None
+    sources: Sources, results: tuple[SearchResult, ...], *, match: str | None = None
 ) -> list[dict[str, Any]]:
-    return [entry(result, match=match) for result in results]
+    return [entry(sources, result, match=match) for result in results]
 
 
-def note(content: NoteContent) -> dict[str, Any]:
+def note(sources: Sources, content: NoteContent) -> dict[str, Any]:
     text, truncated = _clip(content.content, MAX_NOTE_CHARS)
     projected: dict[str, Any] = {
+        "id": sources.label_note(content),
         "note": content.title,
         "path": content.path,
         "note_type": str(content.note_type),
@@ -85,15 +86,17 @@ def note(content: NoteContent) -> dict[str, Any]:
     return projected
 
 
-def context(expansion: ContextExpansion) -> dict[str, Any]:
-    """Project expanded context, keeping every item's evidence label.
+def context(sources: Sources, expansion: ContextExpansion) -> dict[str, Any]:
+    """Project expanded context, keeping how each item was reached.
 
-    The labels are the point. An answer must say whether a fact is direct
-    evidence, something a link led to, or nearby history in another note.
+    That is the point of expanding at all. An answer must say whether a fact is
+    direct evidence, something a link led to, or nearby history in another
+    note. (This `evidence` field is unrelated to the citation ids: it says how
+    an item was reached, not how to cite it.)
     """
     items = []
     for item in expansion.items:
-        projected = entry(item.result)
+        projected = entry(sources, item.result)
         projected["evidence"] = [str(label) for label in item.labels]
         projected["hops"] = item.depth
         items.append(projected)
@@ -101,7 +104,9 @@ def context(expansion: ContextExpansion) -> dict[str, Any]:
         {"target": diagnostic.target_text, "reason": str(diagnostic.resolution)}
         for diagnostic in expansion.diagnostics
     ]
-    projected = {"source_entry_id": expansion.source_entry_id, "items": items}
+    # No `source_entry_id`. The caller named the source by its label, and
+    # echoing an internal identifier back only invites the model to print it.
+    projected: dict[str, Any] = {"items": items}
     if unresolved:
         projected["unresolved_links"] = unresolved
     return projected

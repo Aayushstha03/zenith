@@ -16,13 +16,13 @@ from typing import Any
 from pydantic_ai import ModelRetry, RunContext
 
 from zenith.agent import projections
-from zenith.library import Zenith
+from zenith.agent.sources import Sources
 
-_ENTRY_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+_SOURCE_ID = re.compile(r"s\d+", re.IGNORECASE)
 
 
 def search_notes(
-    ctx: RunContext[Zenith],
+    ctx: RunContext[Sources],
     query: str,
     exact: bool = False,
     date_from: str | None = None,
@@ -43,7 +43,7 @@ def search_notes(
         limit: How many entries to return, at most 20.
     """
     with _repair():
-        results = ctx.deps.find_entries(
+        results = ctx.deps.vault.find_entries(
             exact_text=query if exact else None,
             lexical_text=None if exact else query,
             semantic_text=None if exact else query,
@@ -52,10 +52,10 @@ def search_notes(
             tags_all=tuple(tags or ()),
             limit=max(1, min(limit, 20)),
         )
-    return projections.entries(results, match=query if exact else None)
+    return projections.entries(ctx.deps, results, match=query if exact else None)
 
 
-def read_note(ctx: RunContext[Zenith], name: str) -> dict[str, Any]:
+def read_note(ctx: RunContext[Sources], name: str) -> dict[str, Any]:
     """Read one complete note as Markdown.
 
     Search returns fragments of a note. Read the whole note when the question
@@ -65,19 +65,20 @@ def read_note(ctx: RunContext[Zenith], name: str) -> dict[str, Any]:
         name: The note's title, or its path inside the vault. A search result's
             `note` or `path` value works.
     """
-    # An `entry_id` reaches here often enough to be worth naming: it is the one
-    # identifier every result carries, and the library would only answer "note
-    # not found", which does not say what to send instead.
-    if _ENTRY_ID.fullmatch(name.strip()):
+    # An `id` reaches here often enough to be worth naming: it is the first
+    # field of every result, so it is the identifier the model has just read,
+    # and the library would only answer "note not found", which does not say
+    # what to send instead.
+    if _SOURCE_ID.fullmatch(name.strip()):
         raise ModelRetry(
-            f"{name!r} is an entry_id, not a note name. Pass the `note` or "
+            f"{name!r} is a source id, not a note name. Pass the `note` or "
             "`path` value from the same result instead."
         )
     with _repair():
-        return projections.note(ctx.deps.read_note(name))
+        return projections.note(ctx.deps, ctx.deps.vault.read_note(name))
 
 
-def expand_context(ctx: RunContext[Zenith], entry_id: str) -> dict[str, Any]:
+def expand_context(ctx: RunContext[Sources], source: str) -> dict[str, Any]:
     """Find what surrounds one entry: linked notes, backlinks, nearby days.
 
     Each returned item is labelled with how it relates to the entry, so an
@@ -85,13 +86,14 @@ def expand_context(ctx: RunContext[Zenith], entry_id: str) -> dict[str, Any]:
     a link or from history that merely happened nearby in time.
 
     Args:
-        entry_id: The `entry_id` of an entry returned by another tool.
+        source: The `id` of a result another tool returned, such as s3.
     """
     with _repair():
-        return projections.context(ctx.deps.expand_context(entry_id))
+        entry_id = ctx.deps.entry_id(source)
+        return projections.context(ctx.deps, ctx.deps.vault.expand_context(entry_id))
 
 
-def find_backlinks(ctx: RunContext[Zenith], name: str) -> list[dict[str, Any]]:
+def find_backlinks(ctx: RunContext[Sources], name: str) -> list[dict[str, Any]]:
     """Find the entries in other notes that link to this note.
 
     Use this to learn where a note is referred to, and in what terms.
@@ -100,12 +102,12 @@ def find_backlinks(ctx: RunContext[Zenith], name: str) -> list[dict[str, Any]]:
         name: The note's title, or its path inside the vault.
     """
     with _repair():
-        note = ctx.deps.get_note(name)
-        return projections.entries(ctx.deps.get_backlinks(note.note_id))
+        note = ctx.deps.vault.get_note(name)
+        return projections.entries(ctx.deps, ctx.deps.vault.get_backlinks(note.note_id))
 
 
 def find_tasks(
-    ctx: RunContext[Zenith],
+    ctx: RunContext[Sources],
     board: str | None = None,
     columns: list[str] | None = None,
     checked: bool | None = None,
@@ -124,19 +126,17 @@ def find_tasks(
         limit: How many cards to return, at most 50.
     """
     with _repair():
-        results = ctx.deps.find_kanban_cards(
+        results = ctx.deps.vault.find_kanban_cards(
             board=board,
             columns=_columns(ctx, board, columns),
             checked=checked,
             semantic_text=query,
             limit=max(1, min(limit, 50)),
         )
-    return projections.entries(results)
+    return projections.entries(ctx.deps, results)
 
 
-def _columns(
-    ctx: RunContext[Zenith], board: str | None, requested: list[str] | None
-) -> tuple[str, ...]:
+def _columns(ctx: RunContext[Sources], board: str | None, requested: list[str] | None) -> tuple[str, ...]:
     """Resolve column names against the boards, and reject the ones that miss.
 
     Columns reach Qdrant as a case-sensitive match, so "To Do" against a stored
@@ -146,9 +146,7 @@ def _columns(
     """
     if not requested:
         return ()
-    boards = (
-        (ctx.deps.get_kanban_board(board),) if board else ctx.deps.list_kanban_boards()
-    )
+    boards = (ctx.deps.vault.get_kanban_board(board),) if board else ctx.deps.vault.list_kanban_boards()
     known = {column.casefold(): column for item in boards for column in item.columns}
     unknown = [name for name in requested if name.casefold() not in known]
     if unknown:

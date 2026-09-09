@@ -12,9 +12,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from zenith.agent.sources import Sources
 from zenith.agent.tools import TOOLS
 from zenith.core.config import Settings
-from zenith.library import Zenith
 
 INSTRUCTIONS = """
 You answer questions about one person's Markdown notes. The notes are the only
@@ -25,28 +25,26 @@ date, or a quotation.
 
 # How to cite
 
-End every fact you report with a citation, in exactly this form:
+Every result a tool returns carries an `id`, such as s1 or s4. That id is how
+you cite it. End every sentence that reports a fact with the id of the result
+the fact came from, in square brackets:
 
-    [Note Title, Heading, lines N-M]
+    You added an llm based parsing model. [s2]
 
-Copy all three parts from the tool result that gave you the fact: its `note`,
-its `heading`, and its `lines`. A correct sentence looks like this:
-
-    You added an llm based parsing model. [News Resolution, 2026-08-17, lines 6-9]
-
-When the result has no heading, write `[Note Title, lines N-M]` instead.
+When a sentence rests on more than one result, cite them all: [s2][s5].
 
 Cite even when the question does not ask you to. A sentence that reports a fact
 without a citation is not finished.
 
-Never print an `entry_id` or a `source_entry_id`. Those are internal identifiers
-you pass to `expand_context`. They are not citations, and they mean nothing to
-the person reading your answer. This is wrong:
+Put nothing inside the brackets except the id. Not a note title, not a heading,
+not a line number, not a date. All of these are wrong:
 
-    You cleaned up the pipeline. [fb3cf265-36fe-5a66-b619-29485c83dc0e]
+    [News Resolution, 2026-08-17, lines 6-9]
+    [News Resolution]
+    [s2, lines 6-9]
 
-So is a bare note title with no lines, like `[News Resolution]`. Give the note,
-the heading, and the lines every time.
+Cite only an id you were actually given. Never invent one, and never cite an id
+from a result you did not use.
 
 # What the notes establish
 
@@ -104,11 +102,15 @@ def build_model(settings: Settings) -> OpenAIChatModel:
     )
 
 
-def build_agent(settings: Settings, *, model: Any | None = None) -> Agent[Zenith, str]:
-    """Build the answering agent. Pass `model` to run against a test model."""
+def build_agent(settings: Settings, *, model: Any | None = None) -> Agent[Sources, str]:
+    """Build the answering agent. Pass `model` to run against a test model.
+
+    The agent depends on a `Sources`, not on the library directly, because the
+    citation labels it hands out have to live as long as the run does.
+    """
     return Agent(
         model or build_model(settings),
-        deps_type=Zenith,
+        deps_type=Sources,
         tools=TOOLS,
         instructions=INSTRUCTIONS,
         # Sent on every request, so it decides the sampling rather than any

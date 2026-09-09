@@ -10,9 +10,7 @@ from zenith.runtime.cli import build_parser, main
 
 @pytest.fixture
 def cli_settings(monkeypatch, tmp_path: Path) -> Settings:
-    settings = Settings(
-        "http://unused", tmp_path, tmp_path, "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://unused", tmp_path, tmp_path, "entries", "127.0.0.1", 8080)
     monkeypatch.setattr("zenith.runtime.cli.Settings.from_env", lambda: settings)
     return settings
 
@@ -121,9 +119,7 @@ def test_note_read_command_emits_the_markdown_file(monkeypatch, cli_settings, ca
     assert list(payload) == sorted(payload)
 
 
-def test_ask_refuses_to_answer_from_an_unready_index(
-    monkeypatch, cli_settings, capsys
-) -> None:
+def test_ask_refuses_to_answer_from_an_unready_index(monkeypatch, cli_settings, capsys) -> None:
     """Silence from an unready index reads exactly like an honest empty answer."""
     monkeypatch.setattr("zenith.runtime.cli.Zenith", lambda settings: object())
     monkeypatch.setattr(
@@ -162,9 +158,7 @@ def test_ask_refuses_to_run_when_lm_studio_is_not_serving_the_model(
     assert error["llm"]["ready"] is False
 
 
-def test_ask_reports_the_answer_with_the_evidence_it_looked_at(
-    monkeypatch, cli_settings, capsys
-) -> None:
+def test_ask_reports_the_answer_with_the_evidence_it_looked_at(monkeypatch, cli_settings, capsys) -> None:
     from pydantic_ai import RunContext
     from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
     from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -181,12 +175,12 @@ def test_ask_reports_the_answer_with_the_evidence_it_looked_at(
             query: What to look for.
         """
         reached.append(ctx.deps)
-        return [{"entry_id": "e1", "path": "projects/News Resolution.md"}]
+        return [{"id": "s1", "path": "projects/News Resolution.md"}]
 
     def script(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
             return ModelResponse(parts=[ToolCallPart("search_notes", {"query": "pipeline"})])
-        return ModelResponse(parts=[TextPart("You worked on the pipeline.")])
+        return ModelResponse(parts=[TextPart("You worked on the pipeline. [s1]")])
 
     monkeypatch.setattr("zenith.runtime.cli.Zenith", lambda settings: deps)
     monkeypatch.setattr("zenith.runtime.cli.health_report", lambda settings: {"ready": True})
@@ -197,16 +191,18 @@ def test_ask_reports_the_answer_with_the_evidence_it_looked_at(
     assert main(["ask", "what did I do?", "--model", "lfm2.5-8b-a1b"]) == 0
     payload = json.loads(capsys.readouterr().out)
 
-    assert payload["answer"] == "You worked on the pipeline."
+    assert payload["answer"] == "You worked on the pipeline. [s1]"
+    # This tool bypasses the projections, so it issued no label. A citation the
+    # run cannot account for is reported as one, not quietly rendered as a note.
+    assert payload["citations"] == {"s1": {"unknown": True}}
     assert payload["model"] == "lfm2.5-8b-a1b"
     assert payload["question"] == "what did I do?"
     # The trace is part of the result: an answer is only as good as what it read.
-    assert payload["tool_calls"] == [
-        {"arguments": {"query": "pipeline"}, "tool": "search_notes"}
-    ]
+    assert payload["tool_calls"] == [{"arguments": {"query": "pipeline"}, "tool": "search_notes"}]
     assert payload["usage"]["requests"] == 2
     assert payload["usage"]["tool_calls"] == 1
-    assert reached == [deps]
+    # The agent is handed the run's source ledger, holding the library.
+    assert [item.vault for item in reached] == [deps]
     assert list(payload) == sorted(payload)
 
 
@@ -215,8 +211,5 @@ def test_ask_leaves_the_agent_stack_unimported_for_other_commands(monkeypatch, c
     import subprocess
     import sys
 
-    probe = (
-        "import sys, zenith.runtime.cli;"
-        "sys.exit(1 if 'pydantic_ai' in sys.modules else 0)"
-    )
+    probe = "import sys, zenith.runtime.cli;sys.exit(1 if 'pydantic_ai' in sys.modules else 0)"
     assert subprocess.run([sys.executable, "-c", probe]).returncode == 0
