@@ -8,9 +8,7 @@ from zenith.runtime.health import health_report, llm_health
 
 
 def test_health_report_combines_dependencies(monkeypatch, tmp_path: Path) -> None:
-    settings = Settings(
-        "http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080)
     monkeypatch.setattr("zenith.runtime.health.qdrant_health", lambda _: {"ready": True})
     monkeypatch.setattr("zenith.runtime.health.readiness", lambda _: {"ready": True})
     monkeypatch.setattr("zenith.runtime.health.index_health", lambda _: {"ready": True})
@@ -20,18 +18,14 @@ def test_health_report_combines_dependencies(monkeypatch, tmp_path: Path) -> Non
 
 
 def test_health_is_false_when_any_dependency_fails(monkeypatch, tmp_path: Path) -> None:
-    settings = Settings(
-        "http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080)
     monkeypatch.setattr("zenith.runtime.health.qdrant_health", lambda _: {"ready": False})
     monkeypatch.setattr("zenith.runtime.health.readiness", lambda _: {"ready": True})
     assert health_report(settings)["ready"] is False
 
 
 def test_health_is_false_for_incompatible_index(monkeypatch, tmp_path: Path) -> None:
-    settings = Settings(
-        "http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080)
     monkeypatch.setattr("zenith.runtime.health.qdrant_health", lambda _: {"ready": True})
     monkeypatch.setattr("zenith.runtime.health.readiness", lambda _: {"ready": True})
     monkeypatch.setattr(
@@ -45,9 +39,7 @@ def test_health_is_false_for_incompatible_index(monkeypatch, tmp_path: Path) -> 
 
 
 def test_health_is_false_when_models_are_missing(monkeypatch, tmp_path: Path) -> None:
-    settings = Settings(
-        "http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080)
     monkeypatch.setattr("zenith.runtime.health.qdrant_health", lambda _: {"ready": True})
     monkeypatch.setattr("zenith.runtime.health.index_health", lambda _: {"ready": True})
     monkeypatch.setattr(
@@ -60,14 +52,10 @@ def test_health_is_false_when_models_are_missing(monkeypatch, tmp_path: Path) ->
 
 
 def _ready_settings(tmp_path: Path) -> Settings:
-    return Settings(
-        "http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    return Settings("http://qdrant:6333", tmp_path, tmp_path / "models", "entries", "127.0.0.1", 8080)
 
 
-def test_a_closed_lm_studio_never_makes_the_deployment_unhealthy(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_a_closed_lm_studio_never_makes_the_deployment_unhealthy(monkeypatch, tmp_path: Path) -> None:
     settings = _ready_settings(tmp_path)
     monkeypatch.setattr("zenith.runtime.health.qdrant_health", lambda _: {"ready": True})
     monkeypatch.setattr("zenith.runtime.health.readiness", lambda _: {"ready": True})
@@ -96,9 +84,7 @@ def test_the_liveness_probe_does_not_reach_for_lm_studio(monkeypatch, tmp_path: 
     assert "llm" not in health_report(settings)
 
 
-def test_llm_health_is_ready_only_when_the_configured_model_is_served(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_llm_health_is_ready_only_when_the_configured_model_is_served(monkeypatch, tmp_path: Path) -> None:
     import io
 
     settings = _ready_settings(tmp_path)
@@ -136,9 +122,7 @@ def test_llm_health_reports_a_refused_connection_as_not_ready(monkeypatch, tmp_p
     assert "Connection refused" in report["error"]
 
 
-def test_llm_health_reports_a_malformed_model_listing_as_not_ready(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_llm_health_reports_a_malformed_model_listing_as_not_ready(monkeypatch, tmp_path: Path) -> None:
     """An OpenAI-compatible server need not return the shape OpenAI returns.
 
     Raising here would lose the Qdrant, index, model, and vault report that

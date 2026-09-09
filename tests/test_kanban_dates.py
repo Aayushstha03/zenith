@@ -44,7 +44,9 @@ def test_the_daily_note_link_form_is_a_date_and_not_a_link() -> None:
 
 
 def test_a_real_wiki_link_on_a_card_still_resolves() -> None:
-    card = board(FIXTURE_VAULT, "kanban/Kitchen App.md")[("ToDo", "Fourth todo card with [[News Resolution]]")]
+    card = board(FIXTURE_VAULT, "kanban/Kitchen App.md")[
+        ("ToDo", "Fourth todo card with [[News Resolution]]")
+    ]
     assert [link.target_text for link in card.outgoing_links] == ["News Resolution"]
 
 
@@ -66,9 +68,7 @@ def test_an_impossible_date_warns_and_dates_nothing() -> None:
     note = parse(FIXTURE_VAULT)["kanban/Kitchen App.md"]
     card = next(entry for entry in note.entries if entry.text == "Card with an impossible date")
     assert card.entry_date is None
-    assert any(
-        w.kind is WarningType.INVALID_DATE and "2026-02-30" in w.message for w in note.warnings
-    )
+    assert any(w.kind is WarningType.INVALID_DATE and "2026-02-30" in w.message for w in note.warnings)
 
 
 def test_the_entry_date_reaches_the_embedding_input() -> None:
@@ -97,8 +97,7 @@ def test_more_than_one_date_on_a_card_warns_and_takes_the_first(tmp_path: Path) 
     note = parse(tmp_path)["kanban/Two.md"]
     assert note.entries[0].entry_date == "2026-05-12"
     assert any(
-        w.kind is WarningType.INVALID_DATE and "more than one date" in w.message
-        for w in note.warnings
+        w.kind is WarningType.INVALID_DATE and "more than one date" in w.message for w in note.warnings
     )
 
 

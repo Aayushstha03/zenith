@@ -55,9 +55,7 @@ class InitClient(Client):
 
 
 def test_index_initialization_creates_alias_once(tmp_path: Path) -> None:
-    settings = Settings(
-        "http://unused", tmp_path, tmp_path, "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://unused", tmp_path, tmp_path, "entries", "127.0.0.1", 8080)
     client = InitClient()
 
     first = initialize_index(settings, client)

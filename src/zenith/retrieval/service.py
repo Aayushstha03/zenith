@@ -68,9 +68,7 @@ class Retriever:
         return results[0] if results else None
 
     def get_note_entries(self, note_id: str) -> tuple[SearchResult, ...]:
-        return self.metadata_all(
-            QueryPlan(mode=RetrievalMode.METADATA, note_id=note_id)
-        )
+        return self.metadata_all(QueryPlan(mode=RetrievalMode.METADATA, note_id=note_id))
 
     def metadata_all(self, plan: QueryPlan | None = None) -> tuple[SearchResult, ...]:
         plan = plan or QueryPlan(mode=RetrievalMode.METADATA)
@@ -82,9 +80,7 @@ class Retriever:
         filter_ = models.Filter(
             must=[
                 vault_condition(self.vault_id),
-                models.FieldCondition(
-                    key="outgoing_note_ids", match=models.MatchValue(value=note_id)
-                ),
+                models.FieldCondition(key="outgoing_note_ids", match=models.MatchValue(value=note_id)),
             ]
         )
         return self._ordered(filter_)
@@ -99,13 +95,9 @@ class Retriever:
         limit: int = 1,
     ) -> tuple[SearchResult, ...]:
         texts = dict.fromkeys(QUERY_TEXT_FIELDS[mode], query)
-        return self.search(
-            QueryPlan(mode=mode, note_id=note_id, section=section, limit=limit, **texts)
-        )
+        return self.search(QueryPlan(mode=mode, note_id=note_id, section=section, limit=limit, **texts))
 
-    def _ordered(
-        self, filter_: models.Filter, limit: int | None = None
-    ) -> tuple[SearchResult, ...]:
+    def _ordered(self, filter_: models.Filter, limit: int | None = None) -> tuple[SearchResult, ...]:
         """Read every matching record, in stable document order."""
         records = self._scroll_all(filter_)
         records.sort(key=_by_position)
@@ -119,7 +111,9 @@ class Retriever:
         if not plan.literal_text:
             raise ValueError("literal mode requires literal_text")
         candidates = self._scroll_all(filter_)
-        verified = [record for record in candidates if verify_literal(plan.literal_text, record.payload["text"])]
+        verified = [
+            record for record in candidates if verify_literal(plan.literal_text, record.payload["text"])
+        ]
         verified.sort(key=_by_position)
         return tuple(_result(record.payload, plan.mode, verified=True) for record in verified[: plan.limit])
 
@@ -158,7 +152,9 @@ class Retriever:
             collection_name=self.settings.collection_name,
             prefetch=[
                 models.Prefetch(query=dense_vector, using=DENSE_VECTOR, filter=filter_, limit=prefetch_limit),
-                models.Prefetch(query=sparse_vector, using=SPARSE_VECTOR, filter=filter_, limit=prefetch_limit),
+                models.Prefetch(
+                    query=sparse_vector, using=SPARSE_VECTOR, filter=filter_, limit=prefetch_limit
+                ),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             query_filter=filter_,

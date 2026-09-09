@@ -9,10 +9,7 @@ from zenith.index.rebuild import IndexRebuilder
 
 class Encoders:
     def encode(self, texts: list[str]):
-        return [
-            {"semantic": [0.0] * 384, "text-bm25": {"indices": [1], "values": [1.0]}}
-            for _ in texts
-        ]
+        return [{"semantic": [0.0] * 384, "text-bm25": {"indices": [1], "values": [1.0]}} for _ in texts]
 
 
 class Client:

@@ -110,7 +110,9 @@ def main() -> int:
         "hybrid": sum(1 for _, _, _, h in rows if h is not None) / len(rows),
     }
     print()
-    print(f"hit@5 -- dense: {hit_at_5['dense']:.0%}  bm25: {hit_at_5['bm25']:.0%}  hybrid: {hit_at_5['hybrid']:.0%}")
+    print(
+        f"hit@5 -- dense: {hit_at_5['dense']:.0%}  bm25: {hit_at_5['bm25']:.0%}  hybrid: {hit_at_5['hybrid']:.0%}"
+    )
     return 0
 
 

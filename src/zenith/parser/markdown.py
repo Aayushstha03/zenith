@@ -51,9 +51,7 @@ class Prose:
 
 def parse_frontmatter(content: str, path: str = "") -> Frontmatter:
     def failure(body_start: int, message: str) -> Frontmatter:
-        return Frontmatter(
-            {}, body_start, IndexWarning(WarningType.PARSER_FAILURE, path, message, 1)
-        )
+        return Frontmatter({}, body_start, IndexWarning(WarningType.PARSER_FAILURE, path, message, 1))
 
     lines = content.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -192,9 +190,7 @@ def prose_between(
     )
 
 
-def _chunk_spans(
-    chunks: list[str], chunk_lines: list[int]
-) -> tuple[tuple[int, int], ...]:
+def _chunk_spans(chunks: list[str], chunk_lines: list[int]) -> tuple[tuple[int, int], ...]:
     """Pair each chunk's offset in the joined text with its first source line."""
     spans: list[tuple[int, int]] = []
     offset = 0

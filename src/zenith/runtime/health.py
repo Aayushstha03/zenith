@@ -49,11 +49,7 @@ def llm_health(settings: Settings, timeout: float = 1.0) -> dict[str, Any]:
     listed = served.get("data") if isinstance(served, dict) else None
     if not isinstance(listed, list):
         listed = []
-    available = sorted(
-        str(item["id"])
-        for item in listed
-        if isinstance(item, dict) and item.get("id")
-    )
+    available = sorted(str(item["id"]) for item in listed if isinstance(item, dict) and item.get("id"))
     return {
         **report,
         "ready": settings.llm_model in available,
@@ -71,23 +67,21 @@ def health_report(settings: Settings, *, include_llm: bool = False) -> dict[str,
     config_errors = settings.validate()
     qdrant = qdrant_health(settings)
     models = readiness(settings)
-    index = index_health(settings) if qdrant["ready"] else {
-        "ready": False,
-        "collection": settings.collection_name,
-        "reason": "Qdrant is unreachable",
-    }
+    index = (
+        index_health(settings)
+        if qdrant["ready"]
+        else {
+            "ready": False,
+            "collection": settings.collection_name,
+            "reason": "Qdrant is unreachable",
+        }
+    )
     vault = {
         "ready": settings.vault_path.is_dir(),
         "path": str(settings.vault_path),
         "read_only_expected": True,
     }
-    ready = (
-        not config_errors
-        and qdrant["ready"]
-        and index["ready"]
-        and models["ready"]
-        and vault["ready"]
-    )
+    ready = not config_errors and qdrant["ready"] and index["ready"] and models["ready"] and vault["ready"]
     report = {
         "ready": ready,
         "configuration": {"ready": not config_errors, "errors": list(config_errors)},

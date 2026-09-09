@@ -173,9 +173,7 @@ def test_interrupted_update_converges_when_rerun(tmp_path: Path) -> None:
     write(first, "# First\n\nOne.\n")
     write(second, "# Second\n\nTwo.\n")
     client = StateClient()
-    indexer = IncrementalIndexer(
-        settings(tmp_path), client=client, encoders=TrackingEncoders()
-    )
+    indexer = IncrementalIndexer(settings(tmp_path), client=client, encoders=TrackingEncoders())
     assert indexer.reindex().inserted == 2
 
     second.unlink()

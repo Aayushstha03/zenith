@@ -63,7 +63,9 @@ class IndexRebuilder:
             self._upsert(temporary, entries, note_alias_map(notes))
             actual = self.client.count(collection_name=temporary, exact=True).count
             if actual != len(entries):
-                raise RuntimeError(f"rebuild validation failed: expected {len(entries)} points, found {actual}")
+                raise RuntimeError(
+                    f"rebuild validation failed: expected {len(entries)} points, found {actual}"
+                )
             self._verify_sources_unchanged(notes)
             self._activate(temporary, previous)
         except Exception:

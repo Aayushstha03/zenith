@@ -66,18 +66,12 @@ class IncrementalIndexer(IndexRebuilder):
         existing = self._existing_points(scope)
         stale_ids = sorted(set(existing) - {entry.entry_id for entry in entries})
 
-        payloads = {
-            entry.entry_id: self._payload(entry, aliases.get(entry.note_id, ()))
-            for entry in entries
-        }
+        payloads = {entry.entry_id: self._payload(entry, aliases.get(entry.note_id, ())) for entry in entries}
         plan = self._plan(entries, payloads, existing)
 
         generated = self.encoders.encode([entry.embedding_text for entry in plan.encode])
         vectors: dict[str, object] = dict(plan.reused)
-        vectors.update(
-            (entry.entry_id, vector)
-            for entry, vector in zip(plan.encode, generated, strict=True)
-        )
+        vectors.update((entry.entry_id, vector) for entry, vector in zip(plan.encode, generated, strict=True))
         points = [
             models.PointStruct(
                 id=entry.entry_id,
@@ -126,8 +120,7 @@ class IncrementalIndexer(IndexRebuilder):
         # rename gives every entry a new id but leaves the fingerprint alone,
         # so looking the vector up this way makes a rename cost no encoding.
         sources = {
-            record.payload.get("embedding_fingerprint"): str(record.id)
-            for record in existing.values()
+            record.payload.get("embedding_fingerprint"): str(record.id) for record in existing.values()
         }
         encode: list[ParsedEntry] = []
         borrow: dict[str, str] = {}

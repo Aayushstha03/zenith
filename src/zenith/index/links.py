@@ -106,9 +106,7 @@ def resolve_note(note: ParsedNote, catalog: Catalog) -> ParsedNote:
     return replace(note, entries=tuple(entries), warnings=tuple(dict.fromkeys(warnings)))
 
 
-def resolve_link(
-    notes: tuple[ParsedNote, ...], source_note_id: str, target_text: str
-) -> Link:
+def resolve_link(notes: tuple[ParsedNote, ...], source_note_id: str, target_text: str) -> Link:
     if not any(note.note_id == source_note_id for note in notes):
         raise LookupError(f"source note not found: {source_note_id}")
     raw = target_text.strip()

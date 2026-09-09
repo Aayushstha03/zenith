@@ -105,8 +105,7 @@ def card_annotations(
             IndexWarning(
                 WarningType.INVALID_DATE,
                 path,
-                f"Kanban card carries more than one date: {', '.join(unique_dates)}; "
-                f"using {date}",
+                f"Kanban card carries more than one date: {', '.join(unique_dates)}; using {date}",
                 line,
             )
         )
@@ -118,23 +117,36 @@ def canonical_status(column: str) -> str | None:
     return next((status for status, aliases in STATUS_ALIASES.items() if normalized in aliases), None)
 
 
-def parse_settings(lines: list[str], path: str) -> tuple[dict[str, Any] | None, IndexWarning | None, int | None]:
-    start = next((index for index, line in enumerate(lines) if SETTINGS_START_RE.fullmatch(line.strip())), None)
+def parse_settings(
+    lines: list[str], path: str
+) -> tuple[dict[str, Any] | None, IndexWarning | None, int | None]:
+    start = next(
+        (index for index, line in enumerate(lines) if SETTINGS_START_RE.fullmatch(line.strip())), None
+    )
     if start is None:
         return None, None, None
-    fence_start = next((index for index in range(start + 1, len(lines)) if lines[index].strip() == "```json"), None)
+    fence_start = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].strip() == "```json"), None
+    )
     fence_end = (
         next((index for index in range(fence_start + 1, len(lines)) if lines[index].strip() == "```"), None)
         if fence_start is not None
         else None
     )
     if fence_start is None or fence_end is None:
-        warning = IndexWarning(WarningType.INVALID_KANBAN_SETTINGS, path, "Kanban settings block is incomplete", start + 1)
+        warning = IndexWarning(
+            WarningType.INVALID_KANBAN_SETTINGS, path, "Kanban settings block is incomplete", start + 1
+        )
         return None, warning, start
     try:
         value = json.loads("\n".join(lines[fence_start + 1 : fence_end]))
     except json.JSONDecodeError as exc:
-        warning = IndexWarning(WarningType.INVALID_KANBAN_SETTINGS, path, f"invalid Kanban settings JSON: {exc.msg}", fence_start + 2)
+        warning = IndexWarning(
+            WarningType.INVALID_KANBAN_SETTINGS,
+            path,
+            f"invalid Kanban settings JSON: {exc.msg}",
+            fence_start + 2,
+        )
         return None, warning, start
     return value, None, start
 
@@ -152,7 +164,11 @@ def parse_kanban_entries(
 ) -> tuple[tuple[ParsedEntry, ...], tuple[IndexWarning, ...], dict[str, Any]]:
     warnings: list[IndexWarning] = []
     if frontmatter.values.get("kanban-plugin") != "board":
-        warnings.append(IndexWarning(WarningType.MISSING_KANBAN_MARKER, path, "Kanban note is missing `kanban-plugin: board`"))
+        warnings.append(
+            IndexWarning(
+                WarningType.MISSING_KANBAN_MARKER, path, "Kanban note is missing `kanban-plugin: board`"
+            )
+        )
     plugin_settings, settings_warning, settings_start = parse_settings(lines, path)
     if settings_warning:
         warnings.append(settings_warning)

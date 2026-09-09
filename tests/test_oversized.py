@@ -171,7 +171,12 @@ def test_the_encoder_window_matches_what_the_parser_budgets_against() -> None:
     from zenith.index.encoders import LocalEncoders
 
     configured = Settings(
-        "http://unused", FIXTURE_VAULT, FIXTURE_VAULT / "models", "entries", "127.0.0.1", 8080,
+        "http://unused",
+        FIXTURE_VAULT,
+        FIXTURE_VAULT / "models",
+        "entries",
+        "127.0.0.1",
+        8080,
         dense_token_window=192,
     )
     encoders = LocalEncoders(

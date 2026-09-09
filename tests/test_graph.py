@@ -108,7 +108,4 @@ def test_graph_export_is_complete_evidenced_unbounded_and_deterministic(tmp_path
         ("2026-08-20", "note_date"),
         ("2026-08-18", "entry_date"),
     }
-    assert not any(
-        {edge.source_note_id, edge.target_note_id} == {"hub", "isolated"}
-        for edge in date_edges
-    )
+    assert not any({edge.source_note_id, edge.target_note_id} == {"hub", "isolated"} for edge in date_edges)

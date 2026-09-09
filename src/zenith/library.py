@@ -151,12 +151,8 @@ class Zenith:
                 _key(PurePosixPath(note.path).with_suffix("").as_posix()),
             }
         ]
-        title_matches = [
-            note for note in notes if _key(note.title) == needle
-        ]
-        stem_matches = [
-            note for note in notes if _key(PurePosixPath(note.path).stem) == needle
-        ]
+        title_matches = [note for note in notes if _key(note.title) == needle]
+        stem_matches = [note for note in notes if _key(PurePosixPath(note.path).stem) == needle]
         matches = path_matches or title_matches or stem_matches
         if not matches:
             raise LookupError(f"note not found: {path_or_title}")
@@ -171,9 +167,7 @@ class Zenith:
             raise LookupError(f"entry not found: {entry_id}")
         return result
 
-    def get_outgoing_links(
-        self, note_id: str, entry_id: str | None = None
-    ) -> tuple[Link, ...]:
+    def get_outgoing_links(self, note_id: str, entry_id: str | None = None) -> tuple[Link, ...]:
         if entry_id is not None:
             entry = self.get_entry(entry_id)
             if entry.note_id != note_id:
@@ -200,9 +194,7 @@ class Zenith:
         limit: int = 10,
     ) -> tuple[SearchResult, ...]:
         self._entries_for_note(note_id)
-        return self.retriever.search_within(
-            note_id, query, mode=mode, section=section, limit=limit
-        )
+        return self.retriever.search_within(note_id, query, mode=mode, section=section, limit=limit)
 
     def expand_context(
         self,
@@ -292,9 +284,7 @@ class Zenith:
         )
 
     def export_graph(self) -> NetworkGraph:
-        return GraphExporter(
-            self.settings, vault_id=self.vault_id, client=self.client
-        ).export()
+        return GraphExporter(self.settings, vault_id=self.vault_id, client=self.client).export()
 
     def _entries_for_note(self, note_id: str) -> tuple[SearchResult, ...]:
         results = self.retriever.get_note_entries(note_id)
@@ -329,9 +319,7 @@ class Zenith:
         fingerprint: list[tuple[str, int, int]] = []
         for path in discover_markdown(self.settings):
             stat = path.stat()
-            fingerprint.append(
-                (path.relative_to(vault).as_posix(), stat.st_mtime_ns, stat.st_size)
-            )
+            fingerprint.append((path.relative_to(vault).as_posix(), stat.st_mtime_ns, stat.st_size))
         return tuple(fingerprint)
 
 
@@ -367,9 +355,7 @@ def _board(cards: list[SearchResult]) -> KanbanBoard:
     )
     first = ordered[0]
     assert first.board is not None
-    columns = tuple(
-        dict.fromkeys(card.board.column for card in ordered if card.board is not None)
-    )
+    columns = tuple(dict.fromkeys(card.board.column for card in ordered if card.board is not None))
     return KanbanBoard(first.note_id, first.path, first.note_title, columns, ordered)
 
 

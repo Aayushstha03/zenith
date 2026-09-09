@@ -41,4 +41,3 @@ def inspect_collection(settings: Settings, client: Any | None = None) -> dict[st
         "points": info.points_count,
         "errors": errors,
     }
-

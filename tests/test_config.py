@@ -39,8 +39,14 @@ def test_settings_report_contract_errors(tmp_path: Path) -> None:
 
 def test_tag_aliases_must_target_known_tags(tmp_path: Path) -> None:
     settings = Settings(
-        "http://qdrant", tmp_path, tmp_path, "entries", "0.0.0.0", 8080,
-        known_tags=("journal",), tag_aliases=(("recipes", "recipe"),),
+        "http://qdrant",
+        tmp_path,
+        tmp_path,
+        "entries",
+        "0.0.0.0",
+        8080,
+        known_tags=("journal",),
+        tag_aliases=(("recipes", "recipe"),),
     )
     assert "every tag alias must target a known canonical tag" in settings.validate()
 
@@ -55,7 +61,12 @@ def test_dense_token_window_defaults_to_the_model_declared_length() -> None:
 
 def test_a_token_window_past_the_positional_limit_is_rejected(tmp_path: Path) -> None:
     settings = Settings(
-        "http://qdrant:6333", tmp_path, tmp_path, "entries", "127.0.0.1", 8080,
+        "http://qdrant:6333",
+        tmp_path,
+        tmp_path,
+        "entries",
+        "127.0.0.1",
+        8080,
         dense_token_window=1024,
     )
     assert any("must not exceed 512" in error for error in settings.validate())
@@ -63,7 +74,12 @@ def test_a_token_window_past_the_positional_limit_is_rejected(tmp_path: Path) ->
 
 def test_a_tiny_token_window_is_rejected(tmp_path: Path) -> None:
     settings = Settings(
-        "http://qdrant:6333", tmp_path, tmp_path, "entries", "127.0.0.1", 8080,
+        "http://qdrant:6333",
+        tmp_path,
+        tmp_path,
+        "entries",
+        "127.0.0.1",
+        8080,
         dense_token_window=8,
     )
     assert any("at least 32" in error for error in settings.validate())
@@ -101,8 +117,14 @@ def test_llm_settings_default_to_lm_studio_on_the_host(monkeypatch: pytest.Monke
 
 def test_llm_settings_reject_a_non_http_base_url(tmp_path: Path) -> None:
     settings = Settings(
-        "http://qdrant", tmp_path, tmp_path, "entries", "0.0.0.0", 8080,
-        llm_base_url="localhost:1234", llm_model="",
+        "http://qdrant",
+        tmp_path,
+        tmp_path,
+        "entries",
+        "0.0.0.0",
+        8080,
+        llm_base_url="localhost:1234",
+        llm_model="",
     )
     errors = settings.validate()
     assert "ZENITH_LLM_BASE_URL must use http or https" in errors

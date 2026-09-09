@@ -78,7 +78,11 @@ class VaultParser:
             metadata.update(kanban_metadata)
             warnings.extend(kanban_warnings)
         else:
-            note_date = self._log_date(resolved.stem, lines, frontmatter.body_start) if note_type is NoteType.LOG else None
+            note_date = (
+                self._log_date(resolved.stem, lines, frontmatter.body_start)
+                if note_type is NoteType.LOG
+                else None
+            )
             entries, entry_warnings = self._parse_open_entries(
                 note_type=note_type,
                 note_date=note_date,
@@ -92,7 +96,9 @@ class VaultParser:
             )
             warnings.extend(entry_warnings)
             if note_type is NoteType.LOG and note_date is None:
-                warnings.append(IndexWarning(WarningType.INVALID_DATE, relative, "log note has no valid date"))
+                warnings.append(
+                    IndexWarning(WarningType.INVALID_DATE, relative, "log note has no valid date")
+                )
 
         return ParsedNote(
             note_id=note_uuid,
@@ -133,22 +139,41 @@ class VaultParser:
 
         loose_start = body_start
         if note_type is NoteType.LOG and note_date:
-            first_nonempty = next((index for index in range(body_start, first_heading_zero) if lines[index].strip()), None)
+            first_nonempty = next(
+                (index for index in range(body_start, first_heading_zero) if lines[index].strip()), None
+            )
             if first_nonempty is not None and valid_iso_date(lines[first_nonempty].strip()) == note_date:
                 loose_start = first_nonempty + 1
 
         preamble_type = EntryType.DAILY_SECTION if note_type is NoteType.LOG else EntryType.FREEFORM_CHUNK
         for chunk, prose in self._chunks(
-            tokens=tokens, lines=lines, start_zero=loose_start, end_zero=first_heading_zero,
-            relative=relative, title=title, heading=None, note_type=note_type,
-            note_date=note_date, entry_date=None, warnings=warnings,
+            tokens=tokens,
+            lines=lines,
+            start_zero=loose_start,
+            end_zero=first_heading_zero,
+            relative=relative,
+            title=title,
+            heading=None,
+            note_type=note_type,
+            note_date=note_date,
+            entry_date=None,
+            warnings=warnings,
         ):
             body_range = meaningful_line_range(lines, chunk.start_zero, chunk.end_zero)
             entries.append(
                 self._entry(
-                    note_uuid, relative, title, note_type, preamble_type, prose.text, None, (),
+                    note_uuid,
+                    relative,
+                    title,
+                    note_type,
+                    preamble_type,
+                    prose.text,
+                    None,
+                    (),
                     body_range or SourceRange(chunk.start_zero + 1, chunk.end_zero),
-                    note_date, None, prose,
+                    note_date,
+                    None,
+                    prose,
                     _unique_key(f"preamble:{_digest(prose.text)}", duplicates),
                 )
             )
@@ -166,10 +191,17 @@ class VaultParser:
                 entry_date = None
 
             pieces = self._chunks(
-                tokens=tokens, lines=lines, start_zero=heading.content_start,
-                end_zero=heading.content_end, relative=relative, title=title,
-                heading=heading.text, note_type=note_type, note_date=note_date,
-                entry_date=entry_date, warnings=warnings,
+                tokens=tokens,
+                lines=lines,
+                start_zero=heading.content_start,
+                end_zero=heading.content_end,
+                relative=relative,
+                title=title,
+                heading=heading.text,
+                note_type=note_type,
+                note_date=note_date,
+                entry_date=entry_date,
+                warnings=warnings,
             )
             if not pieces:
                 continue
@@ -191,9 +223,19 @@ class VaultParser:
                 )
                 entries.append(
                     self._entry(
-                        note_uuid, relative, title, note_type, entry_type, prose.text, heading.text,
-                        heading.path, SourceRange(start_line, end_line),
-                        note_date, entry_date, prose, structural_key,
+                        note_uuid,
+                        relative,
+                        title,
+                        note_type,
+                        entry_type,
+                        prose.text,
+                        heading.text,
+                        heading.path,
+                        SourceRange(start_line, end_line),
+                        note_date,
+                        entry_date,
+                        prose,
+                        structural_key,
                     )
                 )
                 warnings.extend(prose.warnings)
@@ -275,7 +317,9 @@ class VaultParser:
             note_type=note_type,
             entry_type=entry_type,
             text=text,
-            embedding_text=_embedding_text(note_type, title, heading, note_date, entry_date, prose.tags, text),
+            embedding_text=_embedding_text(
+                note_type, title, heading, note_date, entry_date, prose.tags, text
+            ),
             heading=heading,
             heading_path=heading_path,
             source=source,

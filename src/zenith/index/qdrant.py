@@ -17,11 +17,7 @@ def vault_condition(vault_id: str) -> models.FieldCondition:
 def alias_target(client: Any, alias_name: str) -> str | None:
     """Return the physical collection an alias points at, or None."""
     return next(
-        (
-            alias.collection_name
-            for alias in client.get_aliases().aliases
-            if alias.alias_name == alias_name
-        ),
+        (alias.collection_name for alias in client.get_aliases().aliases if alias.alias_name == alias_name),
         None,
     )
 

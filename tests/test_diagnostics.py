@@ -54,4 +54,3 @@ def test_inspection_reports_missing_alias(tmp_path: Path) -> None:
     report = inspect_collection(settings(tmp_path), Client(with_alias=False))
     assert report["ready"] is False
     assert "does not exist" in report["reason"]
-
