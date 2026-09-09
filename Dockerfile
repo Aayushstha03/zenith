@@ -17,8 +17,14 @@ RUN python -m pip install --prefix=/install --no-deps .
 
 FROM python:3.13.7-slim-bookworm AS runtime
 
+# `PYTHONPATH` is what lets the working tree win. The project is installed
+# into site-packages below, so the image runs on its own with nothing mounted.
+# A PYTHONPATH entry sits ahead of site-packages in `sys.path`, so when compose
+# binds the source at /app/src the container runs that instead, and the
+# `zenith` console script keeps working either way.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
     ZENITH_QDRANT_URL=http://qdrant:6333 \
     ZENITH_VAULT_PATH=/vault \
     ZENITH_MODEL_CACHE_PATH=/models \

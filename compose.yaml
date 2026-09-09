@@ -50,6 +50,16 @@ services:
       ZENITH_LLM_TIMEOUT: ${ZENITH_LLM_TIMEOUT}
       ZENITH_LLM_TEMPERATURE: ${ZENITH_LLM_TEMPERATURE}
     volumes:
+      # The working tree, not the copy baked into the image. `PYTHONPATH` in
+      # the Dockerfile puts it ahead of site-packages, so `docker compose up`
+      # runs the code as it is on disk. Read-only: a container writing here as
+      # uid 10001 would leave files the host user cannot edit. A one-shot
+      # command through `docker compose exec` picks up an edit at once; the
+      # long-running processes need `docker compose restart zenith watch`.
+      - type: bind
+        source: ./src
+        target: /app/src
+        read_only: true
       - type: bind
         source: ${ZENITH_VAULT_PATH}
         target: /vault
@@ -90,6 +100,16 @@ services:
       ZENITH_KNOWN_TAGS: ${ZENITH_KNOWN_TAGS}
       ZENITH_TAG_ALIASES: ${ZENITH_TAG_ALIASES}
     volumes:
+      # The working tree, not the copy baked into the image. `PYTHONPATH` in
+      # the Dockerfile puts it ahead of site-packages, so `docker compose up`
+      # runs the code as it is on disk. Read-only: a container writing here as
+      # uid 10001 would leave files the host user cannot edit. A one-shot
+      # command through `docker compose exec` picks up an edit at once; the
+      # long-running processes need `docker compose restart zenith watch`.
+      - type: bind
+        source: ./src
+        target: /app/src
+        read_only: true
       - type: bind
         source: ${ZENITH_VAULT_PATH}
         target: /vault
@@ -111,6 +131,16 @@ services:
       ZENITH_DENSE_MODEL: ${ZENITH_DENSE_MODEL}
       ZENITH_SPARSE_MODEL: ${ZENITH_SPARSE_MODEL}
     volumes:
+      # The working tree, not the copy baked into the image. `PYTHONPATH` in
+      # the Dockerfile puts it ahead of site-packages, so `docker compose up`
+      # runs the code as it is on disk. Read-only: a container writing here as
+      # uid 10001 would leave files the host user cannot edit. A one-shot
+      # command through `docker compose exec` picks up an edit at once; the
+      # long-running processes need `docker compose restart zenith watch`.
+      - type: bind
+        source: ./src
+        target: /app/src
+        read_only: true
       - model-cache:/models
     command: ["zenith", "models", "prefetch"]
 

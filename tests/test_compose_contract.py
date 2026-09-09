@@ -22,6 +22,28 @@ def test_compose_contract_is_local_persistent_and_read_only() -> None:
     assert compose.count("internal: true") == 1
 
 
+def test_every_service_runs_the_working_tree_rather_than_the_baked_copy() -> None:
+    """One `docker compose up` runs the source on disk, with no second file.
+
+    The image installs the project, so it still runs with nothing mounted. The
+    mount only wins because `PYTHONPATH` puts it ahead of site-packages, and
+    the two have to stay together: the mount alone is shadowed by the install,
+    and `PYTHONPATH` alone points at a directory that is not there.
+    """
+    compose = (ROOT / "compose.yaml").read_text()
+    dockerfile = (ROOT / "Dockerfile").read_text()
+
+    assert "PYTHONPATH=/app/src" in dockerfile
+    # Every service that runs the `zenith` script reads the same source.
+    assert compose.count("target: /app/src") == 3
+    assert compose.count("source: ./src") == 3
+    # The container runs as uid 10001. Writing into the working tree would
+    # leave files behind that the host user cannot edit.
+    for block in compose.split("- type: bind")[1:]:
+        if "target: /app/src" in block:
+            assert "read_only: true" in block
+
+
 def test_the_watcher_runs_as_its_own_service_off_the_routed_network() -> None:
     """Indexing must not depend on the answering model being reachable."""
     compose = (ROOT / "compose.yaml").read_text()
@@ -29,6 +51,7 @@ def test_the_watcher_runs_as_its_own_service_off_the_routed_network() -> None:
     watch = compose.split("  watch:", 1)[1].split("\n  model-prefetch:", 1)[0]
     assert "condition: service_healthy" in watch
     assert "read_only: true" in watch
+    assert "target: /app/src" in watch
     assert "model-cache:/models" in watch
     assert "zenith-internal" in watch
     # The watcher parses and indexes only. Joining `llm` would give the one
