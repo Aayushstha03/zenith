@@ -1,5 +1,31 @@
 # Zenith
 
+*Work in progress. I am building it as I go, and it is just getting started.*
+
+## Why
+
+I work on many projects at the same time. AI makes each one move fast. I test an
+idea, build it, check the result against the last attempt, and make a decision.
+Some decisions are right. Some are wrong. There are many of them, and they come
+quickly.
+
+So I take notes. I write a journal entry each day, a log for each experiment, a
+card for each task, and a record of each decision and its reason. The notes work
+well when I write them. They work badly when I must find them again. The
+information is in the vault, but it takes a long time to open each file, read
+each heading, and remember which day held the answer.
+
+Zenith is the tool for that second part. It makes the lookup fast, simple, and
+one step. I ask a question in the words I remember, and Zenith gives me the
+entries I wrote.
+
+It is also one tool for all of it. My journals, my Kanban boards, my project
+updates, and my freeform logs are different shapes of Markdown, but they hold
+one history. Zenith reads all of them, indexes each entry the same way, and
+searches them together.
+
+## What it is
+
 A local-first search index for a Markdown vault. The Markdown stays the source
 of truth and is mounted read-only. Qdrant holds the derived index and nothing
 else, so the whole index can be thrown away and rebuilt from the notes.
