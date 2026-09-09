@@ -48,6 +48,23 @@ def test_documented_shapes_match_golden_summary() -> None:
     assert {path: summary(note) for path, note in notes.items()} == expected
 
 
+def test_a_daily_note_outside_the_log_root_is_still_dated() -> None:
+    """`Daily/2026-08-20.md` is byte-identical to `logs/2026-08-20.md`.
+
+    Only the directory differs. A vault keeps daily notes in more than one
+    place, and a note the parser leaves undated reaches the answering model as
+    a result titled `2026-08-20` that claims to carry no date.
+    """
+    note = by_path(["Daily/2026-08-20.md"])["Daily/2026-08-20.md"]
+
+    assert note.note_type is NoteType.LOG
+    assert [entry.note_date for entry in note.entries] == ["2026-08-20"] * 3
+    assert [entry.heading for entry in note.entries] == ["Work", "Thoughts", "Meals"]
+    # The same file under the log root parses to the same thing.
+    logged = by_path(["logs/2026-08-20.md"])["logs/2026-08-20.md"]
+    assert summary(note) == summary(logged)
+
+
 def test_standard_note_mixes_dated_and_undated_entries() -> None:
     note = by_path(["messy/deep/random/Mixed Note.md"])["messy/deep/random/Mixed Note.md"]
     detail = next(entry for entry in note.entries if entry.heading == "Detail")

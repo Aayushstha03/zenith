@@ -20,9 +20,7 @@ class HashEncoders:
     def encode(self, texts: list[str]):
         return [
             {"semantic": dense, "text-bm25": sparse}
-            for dense, sparse in zip(
-                self.encode_dense(texts), self.encode_sparse(texts), strict=True
-            )
+            for dense, sparse in zip(self.encode_dense(texts), self.encode_sparse(texts), strict=True)
         ]
 
     def encode_dense(self, texts: list[str]) -> list[list[float]]:
@@ -31,7 +29,9 @@ class HashEncoders:
     def encode_sparse(self, texts: list[str]) -> list[models.SparseVector]:
         vectors = []
         for text in texts:
-            indices = sorted({abs(hash(word)) % 997 for word in re.findall(r"[a-z0-9]+", text.lower())}) or [0]
+            indices = sorted({abs(hash(word)) % 997 for word in re.findall(r"[a-z0-9]+", text.lower())}) or [
+                0
+            ]
             vectors.append(models.SparseVector(indices=indices, values=[1.0] * len(indices)))
         return vectors
 
@@ -72,9 +72,7 @@ def test_library_note_entry_search_and_link_operations(tmp_path: Path) -> None:
 
     literal = api.find_entries(exact_text="fried chicken")
     assert literal and all(result.verified is True for result in literal)
-    scoped = api.search_within(
-        project.note_id, "pipeline", RetrievalMode.LEXICAL, limit=1
-    )
+    scoped = api.search_within(project.note_id, "pipeline", RetrievalMode.LEXICAL, limit=1)
     assert scoped and scoped[0].note_id == project.note_id
 
     with pytest.raises(ValueError, match="ambiguous note title"):
@@ -117,7 +115,10 @@ def test_library_context_graph_and_reindex_surface(tmp_path: Path) -> None:
         warnings.simplefilter("ignore", UserWarning)
         rebuilt = api.reindex(full=True)
     assert rebuilt.notes == 18
-    assert rebuilt.points == 45
+    # 44, not 45. `Daily/2026-08-20.md` is a log now that a dated filename
+    # makes one, so its leading `2026-08-20` line is the note's date and no
+    # longer parses into a headless entry of its own.
+    assert rebuilt.points == 44
     with pytest.raises(ValueError, match="does not accept paths"):
         api.reindex(["Note.md"], full=True)
 
@@ -127,9 +128,7 @@ def test_library_parses_the_vault_once_until_a_note_changes(
 ) -> None:
     vault = tmp_path / "vault"
     shutil.copytree(FIXTURE_VAULT, vault)
-    settings = Settings(
-        "http://unused", vault, tmp_path / "models", "entries", "127.0.0.1", 8080
-    )
+    settings = Settings("http://unused", vault, tmp_path / "models", "entries", "127.0.0.1", 8080)
     client = QdrantClient(path=str(tmp_path / "qdrant"))
     encoders = HashEncoders()
     with warnings.catch_warnings():

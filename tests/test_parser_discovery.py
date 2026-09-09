@@ -21,11 +21,22 @@ def settings() -> Settings:
         ("kanban/Kitchen App.md", NoteType.KANBAN),
         ("projects/News Resolution.md", NoteType.STANDARD),
         ("misc/logs/not-special.md", NoteType.STANDARD),
-        ("Daily/2026-08-20.md", NoteType.STANDARD),
         ("root.md", NoteType.STANDARD),
+        # A note named for a day is a log wherever it sits. One configured
+        # root does not describe a real vault, and a daily note the parser
+        # leaves standard is a daily note it never dates.
+        ("Daily/2026-08-20.md", NoteType.LOG),
+        ("archive/daily notes/2026-08-20.md", NoteType.LOG),
+        ("2026-08-20.md", NoteType.LOG),
+        # The filename has to be a real calendar date, not merely shaped like
+        # one, and not a date with anything else around it.
+        ("Daily/2026-13-40.md", NoteType.STANDARD),
+        ("Daily/2026-08-20 review.md", NoteType.STANDARD),
+        # The Kanban root wins, so a board named for a date stays a board.
+        ("kanban/2026-08-20.md", NoteType.KANBAN),
     ],
 )
-def test_only_configured_first_path_segments_are_special(path: str, expected: NoteType) -> None:
+def test_note_type_comes_from_the_configured_roots_or_a_dated_filename(path: str, expected: NoteType) -> None:
     assert classify_path(path, settings()) is expected
 
 
