@@ -77,6 +77,9 @@ Important fields:
 - `score`: populated by lexical, semantic, and hybrid retrieval.
 - `verified`: `true` for a literally verified result; otherwise `null`.
 - `note_date` and `entry_date` remain distinct.
+- Dates are returned as plain calendar dates. The stored Qdrant payload
+  holds them as UTC datetimes, so a raw payload reads
+  `2026-08-19T00:00:00Z` where this object reads `2026-08-19`.
 - `start_line` and `end_line` are inclusive source lines.
 
 ### Internal link
@@ -741,7 +744,10 @@ Edge types:
 
 ## Python library mapping
 
-The CLI is a thin adapter over the public library:
+Every command below is a thin adapter over the public library, with one
+exception: `ask` has no library method. The answering agent lives in
+`zenith.agent` and is built per question, beside the library rather than
+inside it.
 
 ```python
 from zenith import Zenith

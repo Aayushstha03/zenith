@@ -1,25 +1,57 @@
 # Zenith
 
-Zenith is a local-first Markdown knowledge index. Markdown remains the source of
-truth and is mounted read-only; Qdrant is the sole derived datastore.
+A local-first search index for a Markdown vault. The Markdown stays the source
+of truth and is mounted read-only. Qdrant holds the derived index and nothing
+else, so the whole index can be thrown away and rebuilt from the notes.
 
-## Phase 1 commands
+Zenith cuts notes into entries — daily sections, dated project updates,
+freeform sections, and Kanban cards — and indexes each one with a dense vector,
+a BM25 sparse vector, and a payload carrying its path, heading path, dates, and
+line range. Search it by metadata, exact phrase, keyword, meaning, or a hybrid
+of the last two. Then ask a local model a question and get an answer that cites
+the entries it actually read.
+
+
+## Start it
+
+```bash
+cp .env.example .env          # then set ZENITH_VAULT_PATH to your vault
+docker compose build
+docker compose run --rm model-prefetch
+docker compose up -d
+```
+
+`.env.example` is the template, and it documents every setting.
+The default vault path points at the fixture vault, which is safe to index as-is.
+
+Build the index, then ask it something:
+
+```bash
+docker compose exec zenith zenith index rebuild
+docker compose exec zenith zenith search "pipeline clustering" --mode hybrid
+docker compose exec zenith zenith ask "what did I work on last week?"
+```
+
+The watcher runs as its own service and reindexes each saved file, so the index
+follows the vault without another command.
+
+`zenith ask` needs LM Studio running on the host with "Serve on Local Network"
+enabled. Nothing else does. Parsing, indexing, and the watcher all run with LM
+Studio closed, so the index never competes with a chat model for VRAM.
+
+The Qdrant dashboard is at <http://localhost:6333/dashboard>.
+
+## Working on it
 
 ```bash
 uv sync --dev
 uv run pytest
-docker compose config
-docker compose build
-docker compose run --rm model-prefetch
-docker compose up -d
-docker compose ps
 ```
 
-The image installs the project, and `compose.yaml` also binds `./src` over it
-at `/app/src`. `PYTHONPATH` in the Dockerfile puts the mount ahead of
-site-packages, so the containers run the working tree. Edit a file and the next
-`docker compose exec` runs the change with no rebuild. The two long-running
-processes hold their own code, so restart them after an edit:
+Compose binds `./src` over the image, and `PYTHONPATH` puts the mount first, so
+the containers run the working tree. Edit a file and the next
+`docker compose exec` picks it up with no rebuild. The two long-running
+processes hold their own code:
 
 ```bash
 docker compose restart zenith watch
@@ -27,170 +59,10 @@ docker compose restart zenith watch
 
 Rebuild the image only when a dependency changes.
 
-Parse the mounted vault once or watch it recursively with debounced Watchdog
-events:
+## Documentation
 
-```bash
-docker compose exec zenith zenith parse
-docker compose exec zenith zenith watch
-```
-
-Build the complete derived index through a temporary collection, atomically
-activate it through the configured alias, and inspect its schema:
-
-```bash
-docker compose exec zenith zenith index rebuild
-docker compose exec zenith zenith index update
-docker compose exec zenith zenith index inspect
-```
-
-A failed rebuild leaves the active alias unchanged and removes its incomplete
-temporary collection.
-
-Phase 6 adds two library operations over that active index:
-
-```python
-from zenith import Zenith
-
-api = Zenith(settings)
-context = api.expand_context(entry_id)
-graph = api.export_graph()
-```
-
-Context expansion follows resolved outgoing links and backlinks with a default
-depth of one, a hard maximum depth of two, and at most five linked notes. Each
-returned item is labeled as direct evidence, followed-link context, backlink
-context, or nearby history. Graph export is deliberately unbounded and emits
-deterministically ordered note nodes plus internal-link, shared-tag, and exact
-shared-date edges.
-
-## Entry size and the encoder window
-
-The pinned dense model accepts 256 input tokens and truncates the rest without
-reporting it. Zenith therefore splits any section, preamble, or headless note
-whose content would overrun that window into several entries, cutting only on
-paragraph boundaries. Each piece keeps the heading, heading path, entry type,
-and entry date of the section it came from, so chronology and evidence stay
-intact.
-
-The window is 256 because that is the `max_seq_length` all-MiniLM-L6-v2
-declares for itself. FastEmbed would otherwise run it at 128, which is half the
-length the model was fine-tuned for. `LocalEncoders` pins the real tokenizer to
-`ZENITH_DENSE_TOKEN_WINDOW`, so the parser's budget and the encoder's actual
-limit can never drift apart. Do not set it above 512; past that the positional
-embeddings are untrained.
-
-The parser budgets tokens with a calibrated, dependency-free estimate so that
-parsing stays hermetic and entry identifiers never depend on whether a model is
-present. The estimate deliberately over-counts ordinary prose, which means a
-section can split slightly earlier than strictly necessary.
-
-Two cases cannot be divided: a single paragraph larger than the window, and a
-Kanban card, which is one atomic point. Both emit a
-`truncated_embedding_input` warning instead of losing text silently. Set
-`ZENITH_DENSE_TOKEN_WINDOW` to match a different dense model.
-
-## Kanban card dates
-
-Kanban cards carry dates like every other entry type. Zenith reads the Obsidian
-Kanban date annotation from card text and stores it as the card's `entry_date`,
-so a date query returns cards next to daily sections and project updates:
-
-```markdown
-- [ ] Buy saffron @{2026-05-12}
-- [x] Finished kitchen setup @{2026-08-20} @@{14:30}
-- [ ] Dated by daily-note link @[[2026-08-20]]
-```
-
-Zenith records the date only. It does not decide whether a date means due,
-scheduled, or done, because the plugin does not record that either. Every card
-payload already carries `board.checked` and `board.status`, so a caller can
-read that meaning from the board's own state.
-
-The `@` and `@@` triggers come from the board's `kanban:settings` block when it
-sets `date-trigger` or `time-trigger`, and fall back to the plugin defaults. The
-time is kept as `board.card_time`. A date that is not a real calendar date
-raises an `invalid_date` warning and dates nothing. A card carrying more than
-one date warns and keeps the first.
-
-The annotation never reaches the searchable text or the embedding input, so
-plugin syntax cannot pollute BM25 terms or dense vectors. `@[[2026-08-20]]` is
-read as a date, not as a link to a note named `2026-08-20`.
-
-## Library and CLI
-
-Phase 7 exposes the index as one composable `Zenith` library object and a
-machine-readable JSON CLI. The library supports entry search, note and entry
-lookup, outgoing links, backlinks, link resolution, note-scoped search,
-bounded context expansion, warnings, Kanban operations, graph export, and
-full or incremental reindexing.
-
-The complete command, option, response-schema, exit-code, and Python API
-reference is in [docs/cli-reference.md](docs/cli-reference.md).
-
-Representative CLI commands:
-
-```bash
-docker compose exec zenith zenith index init
-docker compose exec zenith zenith search "fried chicken" --mode literal
-docker compose exec zenith zenith note get "News Resolution"
-docker compose exec zenith zenith note read "News Resolution"
-docker compose exec zenith zenith links backlinks NOTE_ID
-docker compose exec zenith zenith context ENTRY_ID
-docker compose exec zenith zenith warnings --type missing_link
-docker compose exec zenith zenith kanban find --checked false
-docker compose exec zenith zenith graph export
-docker compose exec zenith zenith diagnose
-```
-
-Successful commands return JSON and exit zero. Invalid input or missing and
-ambiguous identifiers return a JSON error on stderr with a nonzero exit code.
-
-After model prefetch, the application health endpoint is available inside the
-Compose network and the Qdrant dashboard is available at
-<http://localhost:6333/dashboard>.
-
-## Asking questions
-
-`zenith ask` answers a question from the vault:
-
-```bash
-docker compose exec zenith zenith ask "what did I work on last week?"
-```
-
-The model reaches the notes only through five tools: search, whole-note read,
-context expansion, backlinks, and Kanban cards. It cannot write to the vault
-and it cannot export the graph. The result carries the answer, the trace of
-what the model actually looked at, and token usage, so an answer can be
-checked against its evidence.
-
-Every tool result carries a short id, `s1`, `s2`, `s3`, and the model cites
-that id rather than writing a citation of its own. An answer reads `You added
-an llm based parsing model. [s2]`, and the result's `citations` object resolves
-each cited id back to its note, heading, and line range. See
-[the CLI reference](docs/cli-reference.md) for the shape.
-
-The answering model is served by LM Studio on the host over its
-OpenAI-compatible API, and is configured through `ZENITH_LLM_BASE_URL`,
-`ZENITH_LLM_MODEL`, `ZENITH_LLM_API_KEY`, `ZENITH_LLM_TIMEOUT`, and
-`ZENITH_LLM_TEMPERATURE`. Enable "Serve on Local Network" in LM Studio so the
-container can reach it, and start its server: LM Studio does not start it with
-the application unless "Start server on launch" is on.
-
-The temperature is 0.0 by default, and is sent on every request, so a preset
-held by the LM Studio server does not apply to `zenith ask`.
-
-LM Studio is optional. Parsing, indexing, and the watcher all run with it
-closed, so the index never competes with a chat model for VRAM. `zenith health`
-reports LM Studio but never fails because of it, and the container liveness
-probe does not contact it at all.
-
-`zenith ask` refuses to answer when the index is not ready, rather than
-searching an unready index and reporting that the notes say nothing.
-
-Deployment settings are documented in `.env`. To use a real vault, set
-`ZENITH_VAULT_PATH` there to an absolute host path. The Compose mount remains
-read-only. `.env.example` is the shareable template.
-
-Architecture and phased acceptance criteria are documented in
-`architecture-final.md` and `implementation-plan-final.md`.
+- [docs/design.md](docs/design.md) — how Zenith works, and why. The decisions,
+  the indexing pipeline, the retrieval modes, the invariants, and the known
+  limits.
+- [docs/cli-reference.md](docs/cli-reference.md) — every command, option,
+  response shape, exit code, and Python API method.
